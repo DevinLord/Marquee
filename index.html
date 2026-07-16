@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Marquee</title>
+<title>Marquee — a movie diary</title>
 <meta name="description" content="A personal, single-user movie diary powered by TMDB." />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -207,6 +207,66 @@ function yearOf(entry) {
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }
+
+/* ---------------- tab bar icons ---------------- */
+
+function IconFilms() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3 9a2 2 0 000 4v3.5a1 1 0 001 1h16a1 1 0 001-1V13a2 2 0 000-4V5.5a1 1 0 00-1-1H4a1 1 0 00-1 1V9z" />
+      <line x1="14" y1="4.5" x2="14" y2="19.5" strokeDasharray="2 2.4" />
+    </svg>
+  );
+}
+function IconLists() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true">
+      <line x1="8.5" y1="6" x2="20" y2="6" />
+      <line x1="8.5" y1="12" x2="20" y2="12" />
+      <line x1="8.5" y1="18" x2="20" y2="18" />
+      <circle cx="4.5" cy="6" r="1" />
+      <circle cx="4.5" cy="12" r="1" />
+      <circle cx="4.5" cy="18" r="1" />
+    </svg>
+  );
+}
+function IconStats() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <line x1="5" y1="20" x2="5" y2="12" />
+      <line x1="12" y1="20" x2="12" y2="6.5" />
+      <line x1="19" y1="20" x2="19" y2="15" />
+      <line x1="3" y1="20.5" x2="21" y2="20.5" />
+    </svg>
+  );
+}
+function IconSettings() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true">
+      <circle cx="12" cy="12" r="8.5" />
+      <circle cx="12" cy="12" r="2.6" />
+      <line x1="12" y1="2.7" x2="12" y2="6.3" />
+      <line x1="12" y1="17.7" x2="12" y2="21.3" />
+      <line x1="2.7" y1="12" x2="6.3" y2="12" />
+      <line x1="17.7" y1="12" x2="21.3" y2="12" />
+    </svg>
+  );
+}
+function IconSearch() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+      <circle cx="10.5" cy="10.5" r="6.5" />
+      <line x1="15.5" y1="15.5" x2="21" y2="21" />
+    </svg>
+  );
+}
+
+const NAV_ITEMS = [
+  { name: "diary", label: "Films", Icon: IconFilms },
+  { name: "lists", label: "Lists", Icon: IconLists },
+  { name: "stats", label: "Stats", Icon: IconStats },
+  { name: "settings", label: "Settings", Icon: IconSettings },
+];
 
 /* ---------------- stars ---------------- */
 
@@ -490,33 +550,21 @@ function MovieDiary() {
     <div className="mvd">
       <StyleTag />
       <header className="topbar">
-        <button className="wordmark" onClick={() => setView({ name: "diary" })}>
-          MARQUEE<span className="wordmark-sub">a movie diary</span>
-        </button>
-        <nav className="nav" aria-label="Main">
-          {[
-            ["diary", "Diary"],
-            ["lists", "Lists"],
-            ["top5", "Top 5"],
-            ["stats", "Stats"],
-            ["settings", "Settings"],
-          ].map(([name, label]) => (
-            <button
-              key={name}
-              className={"nav-link" + (view.name === name ? " active" : "")}
-              aria-current={view.name === name ? "page" : undefined}
-              onClick={() => setView({ name })}
-            >
-              {label}
-            </button>
-          ))}
-        </nav>
-        <button className="btn-log" onClick={() => setLogOpen(true)}>+ Log a movie</button>
+        <span className="topbar-side" aria-hidden="true" />
+        <button className="wordmark" onClick={() => setView({ name: "diary" })}>MARQUEE</button>
+        <button className="btn-log-icon" onClick={() => setLogOpen(true)} aria-label="Log a movie">+</button>
       </header>
 
       <main className="stage">
         {view.name === "diary" && (
-          <DiaryGrid entries={entryList} openDetail={(id) => setView({ name: "detail", id })} onLog={() => setLogOpen(true)} />
+          <FilmsPage
+            entries={entries}
+            entryList={entryList}
+            top5={top5}
+            onChangeTop5={persistTop5}
+            openDetail={(id) => setView({ name: "detail", id })}
+            onLog={() => setLogOpen(true)}
+          />
         )}
         {view.name === "detail" && entries[view.id] && (
           <DetailPage
@@ -558,14 +606,6 @@ function MovieDiary() {
             }
           />
         )}
-        {view.name === "top5" && (
-          <Top5Page
-            top5={top5}
-            entries={entries}
-            onChange={persistTop5}
-            onOpenMovie={(id) => setView({ name: "detail", id })}
-          />
-        )}
         {view.name === "stats" && <StatsPage entries={entryList} />}
         {view.name === "settings" && (
           <SettingsPage
@@ -580,6 +620,20 @@ function MovieDiary() {
           />
         )}
       </main>
+
+      <nav className="bottombar" aria-label="Main">
+        {NAV_ITEMS.map(({ name, label, Icon }) => (
+          <button
+            key={name}
+            className={"tab-link" + (view.name === name ? " active" : "")}
+            aria-current={view.name === name ? "page" : undefined}
+            onClick={() => setView({ name })}
+          >
+            <Icon />
+            <span className="tab-label">{label}</span>
+          </button>
+        ))}
+      </nav>
 
       {logOpen && (
         <LogModal
@@ -605,13 +659,126 @@ function MovieDiary() {
 
 /* ---------------- diary grid ---------------- */
 
-function DiaryGrid({ entries, openDetail, onLog }) {
+function Top5Strip({ top5, entries, onChange, onOpenMovie }) {
+  const [pickingSlot, setPickingSlot] = useState(null);
+  const [filter, setFilter] = useState("");
+
+  const candidates = useMemo(
+    () =>
+      Object.values(entries)
+        .filter((e) => e.title.toLowerCase().includes(filter.toLowerCase()))
+        .sort((a, b) => b.rating - a.rating),
+    [entries, filter]
+  );
+
+  const setSlot = (slot, id) => {
+    const next = top5.map((m) => (m === id ? null : m)); // no duplicates
+    next[slot] = id;
+    onChange(next);
+    setPickingSlot(null);
+    setFilter("");
+  };
+
+  const move = (idx, dir) => {
+    const j = idx + dir;
+    if (j < 0 || j > 4) return;
+    const next = [...top5];
+    [next[idx], next[j]] = [next[j], next[idx]];
+    onChange(next);
+  };
+
+  return (
+    <div className="top5-strip">
+      <h2 className="top5-strip-head">Top 5</h2>
+      <ol className="marquee-board compact">
+        {top5.map((id, idx) => {
+          const e = id ? entries[id] : null;
+          const p = e ? e.chosenPoster || e.posterPath : null;
+          return (
+            <li className={"marquee-slot" + (e ? " filled" : "")} key={idx}>
+              <span className="marquee-num" aria-hidden="true">{idx + 1}</span>
+              {e ? (
+                <>
+                  <button className="marquee-poster" onClick={() => onOpenMovie(id)} aria-label={`Open ${e.title}`}>
+                    {p ? <img src={IMG + "w342" + p} alt="" loading="lazy" /> : <div className="poster-blank"><span>{e.title}</span></div>}
+                  </button>
+                  <div className="marquee-title">{e.title}</div>
+                  <div className="row-btns center">
+                    <button className="btn-ghost" onClick={() => move(idx, -1)} disabled={idx === 0} aria-label="Move up in ranking">↑</button>
+                    <button className="btn-ghost" onClick={() => move(idx, 1)} disabled={idx === 4} aria-label="Move down in ranking">↓</button>
+                    <button className="btn-ghost" onClick={() => setPickingSlot(idx)} aria-label={`Replace number ${idx + 1}`}>swap</button>
+                    <button className="btn-ghost danger" onClick={() => setSlot(idx, null)} aria-label={`Clear number ${idx + 1}`}>✕</button>
+                  </div>
+                </>
+              ) : (
+                <button className="marquee-empty" onClick={() => setPickingSlot(idx)}>
+                  Pick № {idx + 1}
+                </button>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+
+      {pickingSlot != null && (
+        <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && setPickingSlot(null)}>
+          <div className="modal" role="dialog" aria-modal="true" aria-label={`Pick number ${pickingSlot + 1}`}>
+            <div className="modal-head">
+              <h2>Pick № {pickingSlot + 1}</h2>
+              <button className="btn-ghost" onClick={() => setPickingSlot(null)} aria-label="Close">✕</button>
+            </div>
+            {Object.keys(entries).length === 0 ? (
+              <p className="quiet-note">Log some movies first — the Top 5 draws from your films.</p>
+            ) : (
+              <>
+                <input
+                  className="search-big"
+                  type="search"
+                  placeholder="Filter your films…"
+                  value={filter}
+                  onChange={(e) => setFilter(e.target.value)}
+                  autoFocus
+                />
+                <ul className="results">
+                  {candidates.map((e) => (
+                    <li key={e.id}>
+                      <button className="result" onClick={() => setSlot(pickingSlot, e.id)}>
+                        {(e.chosenPoster || e.posterPath) ? (
+                          <img src={IMG + "w92" + (e.chosenPoster || e.posterPath)} alt="" loading="lazy" />
+                        ) : (
+                          <div className="thumb-blank" />
+                        )}
+                        <span className="result-title">{e.title}</span>
+                        <span className="result-year">{yearOf(e)}</span>
+                        <StarDisplay value={e.rating} size={12} />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------------- films page (Top 5 + grid) ---------------- */
+
+function FilmsPage({ entries, entryList, top5, onChangeTop5, openDetail, onLog }) {
   const [sort, setSort] = useState("watched-desc");
   const [minRating, setMinRating] = useState(0);
   const [query, setQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchRef = useRef(null);
+
+  useEffect(() => {
+    if (searchOpen && searchRef.current) searchRef.current.focus();
+  }, [searchOpen]);
 
   const shown = useMemo(() => {
-    let list = entries.filter(
+    let list = entryList.filter(
       (e) => e.rating >= minRating && e.title.toLowerCase().includes(query.toLowerCase())
     );
     const by = {
@@ -624,61 +791,77 @@ function DiaryGrid({ entries, openDetail, onLog }) {
       "year-asc": (a, b) => (a.releaseDate || "").localeCompare(b.releaseDate || ""),
     };
     return [...list].sort(by[sort]);
-  }, [entries, sort, minRating, query]);
+  }, [entryList, sort, minRating, query]);
 
-  if (entries.length === 0) {
-    return (
-      <div className="empty-house">
-        <div className="empty-mark" aria-hidden="true">✦</div>
-        <h2>Nothing on the marquee yet</h2>
-        <p>Log the first movie you've watched and your diary starts here.</p>
-        <button className="btn-log" onClick={onLog}>+ Log a movie</button>
-      </div>
-    );
-  }
+  const closeSearch = () => {
+    setQuery("");
+    setSearchOpen(false);
+  };
 
   return (
     <section>
-      <div className="controls">
-        <label className="ctrl">
-          <span>Sort</span>
-          <select value={sort} onChange={(e) => setSort(e.target.value)}>
-            <option value="watched-desc">Watched — newest</option>
-            <option value="watched-asc">Watched — oldest</option>
-            <option value="rating-desc">Rating — highest</option>
-            <option value="rating-asc">Rating — lowest</option>
-            <option value="title">Title A–Z</option>
-            <option value="year-desc">Release year — newest</option>
-            <option value="year-asc">Release year — oldest</option>
-          </select>
-        </label>
-        <label className="ctrl">
-          <span>Rated at least</span>
-          <select value={minRating} onChange={(e) => setMinRating(Number(e.target.value))}>
-            <option value={0}>Any rating</option>
-            {[1, 2, 3, 3.5, 4, 4.5, 5].map((r) => (
-              <option key={r} value={r}>{r}★ +</option>
-            ))}
-          </select>
-        </label>
-        <label className="ctrl grow">
-          <span>Find</span>
-          <input
-            type="search"
-            placeholder="Search your diary…"
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-          />
-        </label>
-        <div className="count">{shown.length} of {entries.length}</div>
-      </div>
+      <Top5Strip top5={top5} entries={entries} onChange={onChangeTop5} onOpenMovie={openDetail} />
 
-      <div className="grid">
-        {shown.map((e) => (
-          <TicketCard key={e.id} entry={e} onOpen={() => openDetail(e.id)} />
-        ))}
-      </div>
-      {shown.length === 0 && <p className="quiet-note">No entries match those filters.</p>}
+      {entryList.length === 0 ? (
+        <div className="empty-house">
+          <div className="empty-mark" aria-hidden="true">✦</div>
+          <h2>Nothing on the marquee yet</h2>
+          <p>Log the first movie you've watched and your films start here.</p>
+          <button className="btn-log" onClick={onLog}>+ Log a movie</button>
+        </div>
+      ) : (
+        <>
+          <div className="controls-collapsed">
+            <select className="pill-select" value={sort} onChange={(e) => setSort(e.target.value)} aria-label="Sort by">
+              <option value="watched-desc">↕ Newest</option>
+              <option value="watched-asc">↕ Oldest</option>
+              <option value="rating-desc">↕ Highest rated</option>
+              <option value="rating-asc">↕ Lowest rated</option>
+              <option value="title">↕ Title A–Z</option>
+              <option value="year-desc">↕ Release year · newest</option>
+              <option value="year-asc">↕ Release year · oldest</option>
+            </select>
+            <select
+              className="pill-select"
+              value={minRating}
+              onChange={(e) => setMinRating(Number(e.target.value))}
+              aria-label="Minimum rating"
+            >
+              <option value={0}>★ Any rating</option>
+              {[1, 2, 3, 3.5, 4, 4.5, 5].map((r) => (
+                <option key={r} value={r}>★ {r}+</option>
+              ))}
+            </select>
+
+            {searchOpen ? (
+              <div className="search-expand">
+                <input
+                  ref={searchRef}
+                  type="search"
+                  placeholder="Search your films…"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  onBlur={() => { if (!query) setSearchOpen(false); }}
+                />
+                <button className="icon-btn" onClick={closeSearch} aria-label="Close search">✕</button>
+              </div>
+            ) : (
+              <button className="icon-btn" onClick={() => setSearchOpen(true)} aria-label="Search your films">
+                <IconSearch />
+              </button>
+            )}
+
+            <span className="count">{shown.length} of {entryList.length}</span>
+          </div>
+
+          <div className="grid">
+            {shown.map((e) => (
+              <TicketCard key={e.id} entry={e} onOpen={() => openDetail(e.id)} />
+            ))}
+          </div>
+          {shown.length === 0 && <p className="quiet-note">No films match those filters.</p>}
+        </>
+      )}
     </section>
   );
 }
@@ -839,7 +1022,7 @@ function LogModal({ tmdb, hasKey, existing, onClose, onSave, goSettings }) {
               <div className="row-end">
                 <button className="btn-ghost" onClick={() => setPicked(null)}>← Back to search</button>
                 <button className="btn-log" disabled={!rating} onClick={save}>
-                  {rating ? "Add to diary" : "Pick a rating first"}
+                  {rating ? "Add to films" : "Pick a rating first"}
                 </button>
               </div>
             </div>
@@ -879,7 +1062,7 @@ function DetailPage({ entry, tmdb, lists, onBack, onUpdate, onDelete, onAddToLis
 
   return (
     <section className="detail">
-      <button className="btn-ghost back" onClick={onBack}>← Diary</button>
+      <button className="btn-ghost back" onClick={onBack}>← Films</button>
 
       <div className="detail-main">
         <div className="detail-poster">
@@ -961,7 +1144,7 @@ function DetailPage({ entry, tmdb, lists, onBack, onUpdate, onDelete, onAddToLis
                 <button className="btn-ghost" onClick={() => setConfirmDelete(false)}>Keep it</button>
               </div>
             ) : (
-              <button className="btn-ghost danger" onClick={() => setConfirmDelete(true)}>Remove from diary</button>
+              <button className="btn-ghost danger" onClick={() => setConfirmDelete(true)}>Remove from films</button>
             )}
           </div>
         </div>
@@ -1096,7 +1279,7 @@ function ListDetail({ list, entries, onBack, onOpenMovie, onUpdate }) {
       )}
 
       {list.movieIds.length === 0 && (
-        <p className="quiet-note">Empty so far. Open any movie in your diary and use “Add to a list.”</p>
+        <p className="quiet-note">Empty so far. Open any movie in your films and use “Add to a list.”</p>
       )}
 
       <ol className="list-rows">
@@ -1129,117 +1312,6 @@ function ListDetail({ list, entries, onBack, onOpenMovie, onUpdate }) {
     </section>
   );
 }
-
-/* ---------------- top 5 ---------------- */
-
-function Top5Page({ top5, entries, onChange, onOpenMovie }) {
-  const [pickingSlot, setPickingSlot] = useState(null);
-  const [filter, setFilter] = useState("");
-
-  const candidates = useMemo(
-    () =>
-      Object.values(entries)
-        .filter((e) => e.title.toLowerCase().includes(filter.toLowerCase()))
-        .sort((a, b) => b.rating - a.rating),
-    [entries, filter]
-  );
-
-  const setSlot = (slot, id) => {
-    const next = top5.map((m) => (m === id ? null : m)); // no duplicates
-    next[slot] = id;
-    onChange(next);
-    setPickingSlot(null);
-    setFilter("");
-  };
-
-  const move = (idx, dir) => {
-    const j = idx + dir;
-    if (j < 0 || j > 4) return;
-    const next = [...top5];
-    [next[idx], next[j]] = [next[j], next[idx]];
-    onChange(next);
-  };
-
-  return (
-    <section>
-      <h1 className="page-head">The Top Five</h1>
-      <p className="quiet-note">Your five, in order. Change your mind anytime — the marquee updates.</p>
-
-      <ol className="marquee-board">
-        {top5.map((id, idx) => {
-          const e = id ? entries[id] : null;
-          const p = e ? e.chosenPoster || e.posterPath : null;
-          return (
-            <li className={"marquee-slot" + (e ? " filled" : "")} key={idx}>
-              <span className="marquee-num" aria-hidden="true">{idx + 1}</span>
-              {e ? (
-                <>
-                  <button className="marquee-poster" onClick={() => onOpenMovie(id)} aria-label={`Open ${e.title}`}>
-                    {p ? <img src={IMG + "w342" + p} alt="" loading="lazy" /> : <div className="poster-blank"><span>{e.title}</span></div>}
-                  </button>
-                  <div className="marquee-title">{e.title}</div>
-                  <div className="row-btns center">
-                    <button className="btn-ghost" onClick={() => move(idx, -1)} disabled={idx === 0} aria-label="Move up in ranking">↑</button>
-                    <button className="btn-ghost" onClick={() => move(idx, 1)} disabled={idx === 4} aria-label="Move down in ranking">↓</button>
-                    <button className="btn-ghost" onClick={() => setPickingSlot(idx)} aria-label={`Replace number ${idx + 1}`}>swap</button>
-                    <button className="btn-ghost danger" onClick={() => setSlot(idx, null)} aria-label={`Clear number ${idx + 1}`}>✕</button>
-                  </div>
-                </>
-              ) : (
-                <button className="marquee-empty" onClick={() => setPickingSlot(idx)}>
-                  Pick № {idx + 1}
-                </button>
-              )}
-            </li>
-          );
-        })}
-      </ol>
-
-      {pickingSlot != null && (
-        <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && setPickingSlot(null)}>
-          <div className="modal" role="dialog" aria-modal="true" aria-label={`Pick number ${pickingSlot + 1}`}>
-            <div className="modal-head">
-              <h2>Pick № {pickingSlot + 1}</h2>
-              <button className="btn-ghost" onClick={() => setPickingSlot(null)} aria-label="Close">✕</button>
-            </div>
-            {Object.keys(entries).length === 0 ? (
-              <p className="quiet-note">Log some movies first — the Top 5 draws from your diary.</p>
-            ) : (
-              <>
-                <input
-                  className="search-big"
-                  type="search"
-                  placeholder="Filter your diary…"
-                  value={filter}
-                  onChange={(e) => setFilter(e.target.value)}
-                  autoFocus
-                />
-                <ul className="results">
-                  {candidates.map((e) => (
-                    <li key={e.id}>
-                      <button className="result" onClick={() => setSlot(pickingSlot, e.id)}>
-                        {(e.chosenPoster || e.posterPath) ? (
-                          <img src={IMG + "w92" + (e.chosenPoster || e.posterPath)} alt="" loading="lazy" />
-                        ) : (
-                          <div className="thumb-blank" />
-                        )}
-                        <span className="result-title">{e.title}</span>
-                        <span className="result-year">{yearOf(e)}</span>
-                        <StarDisplay value={e.rating} size={12} />
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              </>
-            )}
-          </div>
-        </div>
-      )}
-    </section>
-  );
-}
-
-/* ---------------- stats ---------------- */
 
 function StatsPage({ entries }) {
   const stats = useMemo(() => {
@@ -1489,31 +1561,48 @@ function StyleTag() {
 
 /* ---- top bar ---- */
 .topbar {
-  display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
-  padding: 16px 26px;
+  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+  padding: 14px 18px;
   border-bottom: 1px solid var(--line);
   background: rgba(16,21,31,.85);
   position: sticky; top: 0; z-index: 20;
   backdrop-filter: blur(6px);
 }
+.topbar-side { min-width: 1px; }
 .wordmark {
+  grid-column: 2;
   background: none; border: none; color: var(--brass);
-  font-family: var(--display); font-size: 21px; letter-spacing: .32em;
-  display: flex; flex-direction: column; align-items: flex-start; line-height: 1.1;
-  padding: 0;
+  font-family: var(--display); font-size: 20px; letter-spacing: .32em;
+  line-height: 1.1; padding: 0; justify-self: center;
 }
-.wordmark-sub {
-  font-family: var(--body); font-size: 10px; letter-spacing: .28em;
-  text-transform: uppercase; color: var(--paper-dim);
+.btn-log-icon {
+  grid-column: 3; justify-self: end;
+  background: var(--brass); color: #1a1508; border: none;
+  width: 36px; height: 36px; border-radius: 50%;
+  font-size: 22px; font-weight: 400; line-height: 1;
+  display: flex; align-items: center; justify-content: center;
 }
-.nav { display: flex; gap: 4px; flex-wrap: wrap; margin-left: auto; }
-.nav-link {
+.btn-log-icon:hover { background: #dab55c; }
+
+/* ---- bottom tab bar ---- */
+.bottombar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+  display: flex; justify-content: space-around;
+  background: rgba(16,21,31,.94);
+  border-top: 1px solid var(--line);
+  backdrop-filter: blur(6px);
+  padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+}
+.tab-link {
   background: none; border: none; color: var(--paper-dim);
-  font-size: 13px; letter-spacing: .14em; text-transform: uppercase;
-  padding: 8px 12px; border-bottom: 2px solid transparent;
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 6px 10px; flex: 1; max-width: 96px;
 }
-.nav-link:hover { color: var(--paper); }
-.nav-link.active { color: var(--brass); border-bottom-color: var(--brass); }
+.tab-link svg { width: 21px; height: 21px; }
+.tab-link .tab-label { font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }
+.tab-link:hover { color: var(--paper); }
+.tab-link.active { color: var(--brass); }
+
 .btn-log {
   background: var(--brass); color: #1a1508; border: none;
   font-weight: 700; font-size: 13px; letter-spacing: .06em;
@@ -1534,7 +1623,7 @@ function StyleTag() {
 }
 .link { background: none; border: none; color: var(--brass); text-decoration: underline; padding: 0; font-size: inherit; }
 
-.stage { max-width: 1180px; margin: 0 auto; padding: 28px 26px 80px; }
+.stage { max-width: 1180px; margin: 0 auto; padding: 22px 18px calc(88px + env(safe-area-inset-bottom)); }
 
 .loading-house {
   min-height: 60vh; display: grid; place-items: center;
@@ -1558,7 +1647,36 @@ function StyleTag() {
 .quiet-note { color: var(--paper-dim); font-size: 13px; }
 .quiet-note em, .field em { color: var(--paper-dim); font-style: italic; font-size: 12px; }
 
-/* ---- controls row ---- */
+/* ---- top 5 strip (embedded atop Films) ---- */
+.top5-strip { margin-bottom: 30px; }
+.top5-strip-head {
+  font-family: var(--display); font-weight: 400; font-size: 15px;
+  letter-spacing: .24em; text-transform: uppercase; color: var(--brass);
+  margin: 0 0 12px;
+}
+.marquee-board.compact { padding: 18px 14px; gap: 14px; }
+.marquee-board.compact .marquee-num { font-size: 26px; }
+.marquee-board.compact .marquee-title { font-size: 12.5px; }
+
+/* ---- collapsed controls (Films tab) ---- */
+.controls-collapsed { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+.pill-select {
+  background: var(--velvet); color: var(--paper);
+  border: 1px solid var(--line); border-radius: 20px;
+  padding: 7px 12px; font-size: 12.5px; max-width: 150px;
+}
+.icon-btn {
+  background: var(--velvet); border: 1px solid var(--line); color: var(--paper-dim);
+  width: 32px; height: 32px; border-radius: 50%; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; padding: 0;
+}
+.icon-btn svg { width: 16px; height: 16px; }
+.icon-btn:hover { color: var(--paper); border-color: var(--brass-dim); }
+.search-expand { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 140px; }
+.search-expand input { flex: 1; border-radius: 20px; padding: 7px 14px; font-size: 13px; }
+.controls-collapsed .count { color: var(--paper-dim); font-size: 11.5px; margin-left: auto; }
+
+/* ---- controls row (legacy, still used by unaffected pages) ---- */
 .controls { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 22px; }
 .ctrl { display: flex; flex-direction: column; gap: 4px; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--paper-dim); }
 .ctrl.grow { flex: 1; min-width: 180px; }
@@ -1794,12 +1912,12 @@ function StyleTag() {
 
 /* ---- responsive ---- */
 @media (max-width: 640px) {
-  .topbar { padding: 12px 14px; gap: 10px; }
-  .nav { margin-left: 0; width: 100%; order: 3; }
-  .stage { padding: 18px 14px 60px; }
+  .topbar { padding: 10px 14px; }
+  .stage { padding: 16px 14px calc(84px + env(safe-area-inset-bottom)); }
   .grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; }
   .detail-poster { width: 100%; max-width: 300px; }
   .log-form-poster { width: 110px; }
+  .marquee-board.compact { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); }
 }
     `}</style>
   );
