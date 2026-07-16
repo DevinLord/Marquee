@@ -5,18 +5,77 @@ rate it, review it, browse alternate posters, build lists, and keep a
 ranked Top 5. Runs as one self-contained HTML file — no build step, no
 server, no database.
 
-## Live setup (Netlify)
+## Live setup (GitHub Pages)
 
 1. Get a free TMDB API key — see below.
-2. This repo's `index.html` **is** the site. Push it to GitHub as-is.
-3. In Netlify: **Add new site → Import an existing project → GitHub** →
-   pick this repo.
-4. Build command: leave blank. Publish directory: leave as `/` (root).
-   Click **Deploy site**.
-5. Open the Netlify URL, click **Settings** in the app, paste your TMDB
-   key, and click **Test connection**.
+2. This repo's `index.html` **is** the site — push it and `README.md` to
+   the repo root.
+3. On the repo: **Settings → Pages → Build and deployment → Source:
+   Deploy from a branch → Branch: `main`, folder: `/ (root)` → Save.**
+4. GitHub builds it in a minute or two; refresh the Pages settings page
+   for the live URL (`https://yourname.github.io/repo-name/`).
+5. Open that URL, click **Settings** in the app, paste your TMDB key,
+   and click **Test connection**.
 
-That's it — no environment variables, no functions, no backend.
+That's it — no environment variables, no build step, no backend.
+Note: with a public repo, the page is reachable by anyone with the
+URL (not indexed or linked anywhere, just technically public) — fine
+for a personal project, just don't expect real privacy from it.
+
+## Cloud sync across devices (optional)
+
+By default your diary lives only in this browser's `localStorage` — it
+won't show up on a different device or browser. To see the same diary
+everywhere, connect a free Supabase project:
+
+1. Sign up free at [supabase.com](https://supabase.com) — no credit
+   card required.
+2. **New project** — pick any name, set a database password (you won't
+   need it again for this), pick the region closest to you, and wait
+   ~2 minutes while it provisions.
+3. In the left sidebar, open the **SQL Editor**, paste the snippet
+   below, and click **Run**:
+
+   ```sql
+   create table kv_store (
+     key text primary key,
+     value jsonb not null,
+     updated_at timestamptz not null default now()
+   );
+
+   alter table kv_store enable row level security;
+
+   create policy "allow anon read" on kv_store
+     for select using (true);
+   create policy "allow anon insert" on kv_store
+     for insert with check (true);
+   create policy "allow anon update" on kv_store
+     for update using (true);
+   ```
+
+4. In the left sidebar: **Settings → API**. Copy the **Project URL**
+   and the **anon / public** key (not the `service_role` key — that
+   one's more privileged than this app needs).
+5. In the app: **Settings → Cloud sync**, paste both values in, click
+   **Connect**.
+6. On any other device, open the same site, go to Settings → Cloud
+   sync, paste the *same* two values, click **Connect** — it pulls
+   down what's already there instead of overwriting it.
+
+**Connect your main device — the one your existing entries are
+already on — first.** The first device to connect a given Supabase
+project uploads what's already logged there as the shared copy;
+every device after that downloads that copy instead of overwriting it.
+
+Two things worth knowing:
+- These two Supabase values aren't secret in a strong sense — they sit
+  in the page like the TMDB key does. Row Level Security is wide open
+  (any request with the anon key can read/write), which is the
+  necessary trade-off for a no-login single-user app. Don't share the
+  URL somewhere public and expect the diary itself to stay private.
+- Supabase's free tier pauses a project after 7 days with no activity.
+  Nothing is lost — the next load just takes ~30 seconds longer while
+  it wakes back up.
 
 ## Running it locally
 
@@ -41,17 +100,24 @@ to Netlify). Local opening is fine for a quick look, not for daily use.
 
 ## How data is stored
 
-Everything — entries, ratings, reviews, lists, and your Top 5 — is saved
-in this browser's `localStorage`, on whichever device/browser you're
-using. Nothing is sent anywhere except to TMDB (to search movies and
-fetch posters) and, once you paste it in, your API key lives only in
-that same local storage.
+By default, everything — entries, ratings, reviews, lists, and your
+Top 5 — is saved in this browser's `localStorage`, on whichever
+device/browser you're using. Nothing is sent anywhere except to TMDB
+(to search movies and fetch posters) and, once you paste it in, your
+API key lives only in that same local storage.
 
-Consequences worth knowing:
-- Data is **per-browser**, not synced. Using the site from your phone and
-  your laptop means two separate diaries unless you export/import.
+If you set up **Cloud sync** (see below), entries/lists/Top 5 are also
+mirrored to a small Postgres table in your own Supabase project, so
+the same diary follows you across devices. `localStorage` still acts
+as the offline cache either way — the app never depends on the network
+being up to show you what you've already logged.
+
+Without cloud sync, consequences worth knowing:
+- Data is **per-browser**, not synced. Using the site from your phone
+  and your laptop means two separate diaries.
 - Clearing your browser's site data for this URL erases your diary.
-- There's no login and no multi-user support — it's built for one person.
+- There's no login and no multi-user support — it's built for one
+  person, with or without sync turned on.
 
 ## Features
 
