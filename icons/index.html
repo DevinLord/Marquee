@@ -1,0 +1,2400 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <title>Marquee — a movie diary</title>
+  <meta name="description" content="A personal, single-user movie diary powered by TMDB." />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icons/favicon-32.png" sizes="32x32" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+  <meta name="theme-color" content="#0f1115" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Marquee" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400..800&display=swap" rel="stylesheet">
+  <style>
+    html,
+    body {
+      margin: 0;
+      padding: 0;
+      background: #0f1115;
+      touch-action: manipulation;
+      overscroll-behavior: none;
+    }
+
+    #root {
+      min-height: 100vh;
+    }
+
+    #boot-message {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 14px;
+      color: #9298a3;
+      font-family: system-ui, sans-serif;
+      letter-spacing: .04em;
+      font-size: 14px;
+    }
+  </style>
+</head>
+
+<body>
+  <div id="root">
+    <div id="boot-message">
+      <svg width="48" height="44" viewBox="0 0 106 101" aria-hidden="true">
+        <path d="M0 1H18V101H0Z" fill="#8ecae6" />
+        <path d="M18 1L53 53L44 68L18 29Z" fill="#8ecae6" />
+        <path d="M88 1L53 53L62 68L88 29Z" fill="#8ecae6" />
+        <path d="M88 1H106V101H88Z" fill="#8ecae6" />
+      </svg>
+      <span>Loading Marquee…</span>
+    </div>
+  </div>
+
+  <!-- React, ReactDOM, and Babel standalone (in-browser JSX compiler) —
+     this lets the app run as a single plain HTML file with no build step.
+     Requires an internet connection to load these scripts. -->
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone@7/babel.min.js" crossorigin></script>
+
+  <!-- Supabase client — only used if you connect cloud sync in Settings.
+     Harmless if you never set it up; the app works local-only otherwise. -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+
+  <script type="text/babel" data-presets="react">
+    const { useState, useEffect, useRef, useMemo, useCallback } = React;
+
+    /* ------------------------------------------------------------------
+       MARQUEE — a personal movie diary
+       Design direction: a precise, poster-forward cinematic archive.
+       Sharp geometry, restrained color, compact metadata, and clear
+       editorial hierarchy keep the interface focused on the films.
+    ------------------------------------------------------------------- */
+
+    const IMG = "https://image.tmdb.org/t/p/";
+    const STORE = {
+  settings: "moviediary-settings",
+  entries: "moviediary-entries",
+  lists: "moviediary-lists",
+  top5: "moviediary-top5",
+  movieCache: "moviediary-movie-cache",
+};
+
+    /* ---------------- storage helpers ----------------
+       Standalone build: persists to this browser's localStorage instead of
+       the Claude-artifact window.storage API, so the app can be opened as a
+       plain HTML file or hosted (e.g. on Netlify) outside claude.ai. Same
+       async signature as before so nothing else in the app had to change. */
+
+    async function loadKey(key, fallback) {
+      try {
+        const raw = localStorage.getItem(key);
+        if (raw !== null) return JSON.parse(raw);
+      } catch (e) {
+        /* key doesn't exist yet, or storage is unavailable — that's fine */
+      }
+      return fallback;
+    }
+
+    async function saveKey(key, value) {
+      try {
+        localStorage.setItem(key, JSON.stringify(value));
+        return true;
+      } catch (e) {
+        console.error("Save failed:", e);
+        return false;
+      }
+    }
+
+    /* ---------------- cloud sync (optional) ----------------
+       If a Supabase project is connected, diary data (entries, lists, top5)
+       also lives in one small Postgres table, so it's the same on every
+       device. Local `localStorage` always stays as a fast, offline-safe
+       cache — cloud calls are additive and fail silently to local-only if
+       the network is down or nothing's configured yet. TMDB key and the
+       Supabase credentials themselves are per-device only; they're what
+       you use to reach the shared data, so they aren't part of it. */
+
+    const SYNC_TABLE = "kv_store";
+    let _syncClient = null;
+
+    function getSyncClient(url, key) {
+      if (!url || !key || !window.supabase) return null;
+      if (!_syncClient || _syncClient.__url !== url || _syncClient.__key !== key) {
+        try {
+          _syncClient = window.supabase.createClient(url, key);
+          _syncClient.__url = url;
+          _syncClient.__key = key;
+        } catch (e) {
+          return null;
+        }
+      }
+      return _syncClient;
+    }
+
+    async function syncPullAll(url, key) {
+      const client = getSyncClient(url, key);
+      if (!client) return null;
+      try {
+        const { data, error } = await client.from(SYNC_TABLE).select("key, value");
+        if (error) throw error;
+        const out = {};
+        (data || []).forEach((row) => { out[row.key] = row.value; });
+        return out;
+      } catch (e) {
+        return null;
+      }
+    }
+
+    async function syncPush(url, key, storeKey, value) {
+      const client = getSyncClient(url, key);
+      if (!client) return false;
+      try {
+        const { error } = await client
+          .from(SYNC_TABLE)
+          .upsert({ key: storeKey, value, updated_at: new Date().toISOString() }, { onConflict: "key" });
+        if (error) throw error;
+        return true;
+      } catch (e) {
+        return false;
+      }
+    }
+
+    async function syncTest(url, key) {
+      const client = getSyncClient(url, key);
+      if (!client) return "Enter both fields first.";
+      try {
+        const { error } = await client.from(SYNC_TABLE).select("key").limit(1);
+        if (error) throw error;
+        return null; // no error = success
+      } catch (e) {
+        return "Couldn't reach that Supabase project. Check the URL/key, and make sure the kv_store table exists (see README).";
+      }
+    }
+
+    /* ---------------- TMDB helpers ---------------- */
+
+    function buildTmdb(apiKey) {
+      return async function tmdb(path, params = {}) {
+        if (!apiKey) throw new Error("NO_KEY");
+        const isBearer = apiKey.startsWith("eyJ"); // v4 read access token
+        const url = new URL("https://api.themoviedb.org/3" + path);
+        Object.entries(params).forEach(([k, v]) => {
+          if (v !== undefined && v !== null && v !== "") url.searchParams.set(k, v);
+        });
+        if (!isBearer) url.searchParams.set("api_key", apiKey);
+        let res;
+        try {
+          res = await fetch(url.toString(), {
+            headers: isBearer ? { Authorization: "Bearer " + apiKey } : {},
+          });
+        } catch (e) {
+          throw new Error("NETWORK");
+        }
+        if (res.status === 401) throw new Error("BAD_KEY");
+        if (res.status === 429) throw new Error("RATE_LIMIT");
+        if (!res.ok) throw new Error("HTTP_" + res.status);
+        return res.json();
+      };
+    }
+
+    function friendlyError(err) {
+      switch (err.message) {
+        case "NO_KEY":
+          return "Add your TMDB API key in Settings to search for movies.";
+        case "BAD_KEY":
+          return "TMDB rejected that API key. Check it in Settings.";
+        case "RATE_LIMIT":
+          return "TMDB is asking us to slow down. Wait a few seconds and try again.";
+        case "NETWORK":
+          return "Couldn't reach TMDB. Check your connection and try again.";
+        default:
+          return "Something went wrong talking to TMDB. Try again in a moment.";
+      }
+    }
+
+    /* ---------------- small utilities ---------------- */
+
+    function fmtDate(iso) {
+      if (!iso) return "—";
+      const [y, m, d] = iso.split("-").map(Number);
+      const dt = new Date(y, m - 1, d);
+      return dt.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+    }
+
+    function todayISO() {
+      const d = new Date();
+      const p = (n) => String(n).padStart(2, "0");
+      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+    }
+
+    function yearOf(entry) {
+  return entry.releaseDate ? entry.releaseDate.slice(0, 4) : "";
+}
+
+/* Lists can hold movies that aren't logged yet, so any place that needs to
+   show a title/poster/year for a list item checks the real diary entry
+   first (richer, and reflects your chosen poster), falling back to the
+   lightweight movie cache for anything only ever added to a list. */
+function resolveMovie(id, entries, movieCache) {
+  const e = entries[id];
+  if (e) return { id, title: e.title, posterPath: e.chosenPoster || e.posterPath, releaseDate: e.releaseDate, logged: true };
+  const c = movieCache[id];
+  if (c) return { id, title: c.title, posterPath: c.posterPath, releaseDate: c.releaseDate, logged: false };
+  return null;
+}
+
+    function uid() {
+      return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+    }
+
+    /* ---------------- tab bar icons ---------------- */
+
+    function IconFilms() {
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" aria-hidden="true">
+          <path d="M3 9a2 2 0 000 4v3.5a1 1 0 001 1h16a1 1 0 001-1V13a2 2 0 000-4V5.5a1 1 0 00-1-1H4a1 1 0 00-1 1V9z" />
+          <line x1="14" y1="4.5" x2="14" y2="19.5" strokeDasharray="2 2.4" />
+        </svg>
+      );
+    }
+    function IconLists() {
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true">
+          <line x1="8.5" y1="6" x2="20" y2="6" />
+          <line x1="8.5" y1="12" x2="20" y2="12" />
+          <line x1="8.5" y1="18" x2="20" y2="18" />
+          <circle cx="4.5" cy="6" r="1" />
+          <circle cx="4.5" cy="12" r="1" />
+          <circle cx="4.5" cy="18" r="1" />
+        </svg>
+      );
+    }
+    function IconStats() {
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <line x1="5" y1="20" x2="5" y2="12" />
+          <line x1="12" y1="20" x2="12" y2="6.5" />
+          <line x1="19" y1="20" x2="19" y2="15" />
+          <line x1="3" y1="20.5" x2="21" y2="20.5" />
+        </svg>
+      );
+    }
+    function IconSettings() {
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="8.5" />
+          <circle cx="12" cy="12" r="2.6" />
+          <line x1="12" y1="2.7" x2="12" y2="6.3" />
+          <line x1="12" y1="17.7" x2="12" y2="21.3" />
+          <line x1="2.7" y1="12" x2="6.3" y2="12" />
+          <line x1="17.7" y1="12" x2="21.3" y2="12" />
+        </svg>
+      );
+    }
+    function IconSearch() {
+      return (
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+          <circle cx="10.5" cy="10.5" r="6.5" />
+          <line x1="15.5" y1="15.5" x2="21" y2="21" />
+        </svg>
+      );
+    }
+
+function LogoMark({ size = 30 }) {
+  return (
+    <svg className="logo-mark" width={size * 1.05} height={size} viewBox="0 0 106 101" aria-hidden="true">
+      <path d="M0 1H18V101H0Z" />
+      <path d="M18 1L53 53L44 68L18 29Z" />
+      <path d="M88 1L53 53L62 68L88 29Z" />
+      <path d="M88 1H106V101H88Z" />
+    </svg>
+  );
+}
+
+function IconEdit() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+    </svg>
+  );
+}
+
+function IconPlus() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+  );
+}
+
+    const NAV_ITEMS = [
+      { name: "diary", label: "Films", Icon: IconFilms },
+      { name: "lists", label: "Lists", Icon: IconLists },
+      { name: "stats", label: "Stats", Icon: IconStats },
+      { name: "settings", label: "Settings", Icon: IconSettings },
+    ];
+
+    /* ---------------- stars ---------------- */
+
+    function StarDisplay({ value, size = 15 }) {
+      return (
+        <span className="stars" aria-label={`${value} out of 5 stars`} style={{ fontSize: size }}>
+          {[0, 1, 2, 3, 4].map((i) => {
+            const fill = Math.max(0, Math.min(1, value - i));
+            return (
+              <span className="star-wrap" key={i} aria-hidden="true">
+                <span className="star-empty">★</span>
+                <span className="star-fill" style={{ width: fill * 100 + "%" }}>★</span>
+              </span>
+            );
+          })}
+        </span>
+      );
+    }
+
+    function StarInput({ value, onChange, size = 26 }) {
+      const [hover, setHover] = useState(null);
+      const shown = hover != null ? hover : value;
+
+      const handleKey = (e) => {
+        if (e.key === "ArrowRight" || e.key === "ArrowUp") {
+          e.preventDefault();
+          onChange(Math.min(5, (value || 0) + 0.5));
+        } else if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
+          e.preventDefault();
+          onChange(Math.max(0.5, (value || 0.5) - 0.5));
+        }
+      };
+
+      return (
+        <div
+          className="star-input"
+          role="slider"
+          tabIndex={0}
+          aria-label="Rating"
+          aria-valuemin={0.5}
+          aria-valuemax={5}
+          aria-valuenow={value || 0}
+          aria-valuetext={`${value || 0} stars`}
+          onKeyDown={handleKey}
+          onMouseLeave={() => setHover(null)}
+          style={{ fontSize: size }}
+        >
+          {[0, 1, 2, 3, 4].map((i) => {
+            const fill = Math.max(0, Math.min(1, shown - i));
+            return (
+              <span className="star-wrap star-hit" key={i}>
+                <span className="star-empty" aria-hidden="true">★</span>
+                <span className="star-fill" aria-hidden="true" style={{ width: fill * 100 + "%" }}>★</span>
+                <button
+                  type="button"
+                  className="half-hit left"
+                  tabIndex={-1}
+                  aria-label={`${i + 0.5} stars`}
+                  onMouseEnter={() => setHover(i + 0.5)}
+                  onClick={() => onChange(i + 0.5)}
+                />
+                <button
+                  type="button"
+                  className="half-hit right"
+                  tabIndex={-1}
+                  aria-label={`${i + 1} stars`}
+                  onMouseEnter={() => setHover(i + 1)}
+                  onClick={() => onChange(i + 1)}
+                />
+              </span>
+            );
+          })}
+          <span className="star-num">{shown ? shown.toFixed(1) : "—"}</span>
+        </div>
+      );
+    }
+
+    /* ---------------- film card ---------------- */
+
+    function FilmCard({ entry, onOpen }) {
+      const poster = entry.chosenPoster || entry.posterPath;
+      return (
+        <button className="film-card" onClick={onOpen} aria-label={`Open ${entry.title}`}>
+          <div className="film-card-poster">
+            {poster ? (
+              <img src={IMG + "w342" + poster} alt="" loading="lazy" />
+            ) : (
+              <div className="poster-blank"><span>{entry.title}</span></div>
+            )}
+          </div>
+          <div className="film-card-title">{entry.title}</div>
+          <div className="film-card-meta">
+            <StarDisplay value={entry.rating} size={11} />
+            <span className="film-card-date">{fmtDate(entry.watchedDate)}</span>
+          </div>
+        </button>
+      );
+    }
+
+    /* ---------------- film facts (plot, director, cast) ---------------- */
+
+    function FilmFacts({ tmdb, movieId, overview }) {
+      const [details, setDetails] = useState(null);
+      const [castCrew, setCastCrew] = useState(null);
+      const [error, setError] = useState(null);
+      const [loading, setLoading] = useState(true);
+
+      useEffect(() => {
+        let cancelled = false;
+        setLoading(true);
+        setError(null);
+        setDetails(null);
+        setCastCrew(null);
+        Promise.all([tmdb("/movie/" + movieId, {}), tmdb("/movie/" + movieId + "/credits", {})])
+          .then(([d, c]) => {
+            if (cancelled) return;
+            setDetails(d);
+            setCastCrew(c);
+          })
+          .catch((err) => {
+            if (!cancelled) setError(friendlyError(err));
+          })
+          .finally(() => {
+            if (!cancelled) setLoading(false);
+          });
+        return () => {
+          cancelled = true;
+        };
+      }, [movieId]);
+
+      const plot = (details && details.overview) || overview || "";
+      const director = castCrew && castCrew.crew ? castCrew.crew.find((p) => p.job === "Director") : null;
+      const cast = castCrew && castCrew.cast ? castCrew.cast.slice(0, 10) : [];
+
+      return (
+        <div className="film-facts">
+          {plot && <p className="film-plot">{plot}</p>}
+          {loading && <p className="quiet-note">Loading cast &amp; crew…</p>}
+          {error && <div className="notice error">{error}</div>}
+          {!loading && !error && director && (
+            <p className="film-credit"><span className="film-credit-label">Director</span> {director.name}</p>
+          )}
+          {!loading && !error && cast.length > 0 && (
+            <div className="film-cast">
+              <span className="film-credit-label">Cast</span>
+              <div className="film-cast-list">
+                {cast.map((actor) => (
+                  <span className="cast-chip" key={actor.id}>{actor.name}</span>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    /* ---------------- main app ---------------- */
+
+    function MovieDiary() {
+  const [loaded, setLoaded] = useState(false);
+  const [apiKey, setApiKey] = useState("");
+  const [syncUrl, setSyncUrl] = useState("");
+  const [syncKey, setSyncKey] = useState("");
+  const [syncStatus, setSyncStatus] = useState("off"); // 'off' | 'synced' | 'offline'
+  const [entries, setEntries] = useState({}); // tmdbId -> entry
+  const [lists, setLists] = useState([]); // {id, name, movieIds:[]}
+  const [movieCache, setMovieCache] = useState({}); // tmdbId -> {title, posterPath, releaseDate}, for list-only movies
+  const [top5, setTop5] = useState([null, null, null, null, null]);
+  const [view, setView] = useState({ name: "diary" });
+  const [logOpen, setLogOpen] = useState(false);
+  const [toast, setToast] = useState(null);
+  const toastTimer = useRef(null);
+
+  const tmdb = useMemo(() => buildTmdb(apiKey), [apiKey]);
+
+  /* load everything once, pulling from the cloud first if connected */
+  useEffect(() => {
+    (async () => {
+      const [settings, e, l, t, mc] = await Promise.all([
+        loadKey(STORE.settings, {}),
+        loadKey(STORE.entries, {}),
+        loadKey(STORE.lists, []),
+        loadKey(STORE.top5, [null, null, null, null, null]),
+        loadKey(STORE.movieCache, {}),
+      ]);
+      setApiKey(settings.apiKey || "");
+      setSyncUrl(settings.supabaseUrl || "");
+      setSyncKey(settings.supabaseKey || "");
+
+      let finalEntries = e;
+      let finalLists = l;
+      let finalTop5 = Array.isArray(t) && t.length === 5 ? t : [null, null, null, null, null];
+      let finalMovieCache = mc;
+
+      if (settings.supabaseUrl && settings.supabaseKey) {
+        const cloud = await syncPullAll(settings.supabaseUrl, settings.supabaseKey);
+        if (cloud) {
+          if (cloud[STORE.entries] !== undefined) finalEntries = cloud[STORE.entries];
+          if (cloud[STORE.lists] !== undefined) finalLists = cloud[STORE.lists];
+          if (Array.isArray(cloud[STORE.top5]) && cloud[STORE.top5].length === 5) finalTop5 = cloud[STORE.top5];
+          if (cloud[STORE.movieCache] !== undefined) finalMovieCache = cloud[STORE.movieCache];
+          setSyncStatus("synced");
+          // keep the local cache in step with what the cloud just gave us
+          saveKey(STORE.entries, finalEntries);
+          saveKey(STORE.lists, finalLists);
+          saveKey(STORE.top5, finalTop5);
+          saveKey(STORE.movieCache, finalMovieCache);
+        } else {
+          setSyncStatus("offline");
+        }
+      }
+
+      setEntries(finalEntries);
+      setLists(finalLists);
+      setTop5(finalTop5);
+      setMovieCache(finalMovieCache);
+      setLoaded(true);
+    })();
+  }, []);
+
+  const notify = (msg) => {
+    setToast(msg);
+    window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(null), 2600);
+  };
+
+  const pushToCloud = (storeKey, value) => {
+    if (!syncUrl || !syncKey) return;
+    syncPush(syncUrl, syncKey, storeKey, value).then((ok) => setSyncStatus(ok ? "synced" : "offline"));
+  };
+
+  /* persistence wrappers */
+  const persistEntries = async (next) => {
+    setEntries(next);
+    if (!(await saveKey(STORE.entries, next))) notify("Couldn't save — try again.");
+    pushToCloud(STORE.entries, next);
+  };
+  const persistLists = async (next) => {
+    setLists(next);
+    if (!(await saveKey(STORE.lists, next))) notify("Couldn't save — try again.");
+    pushToCloud(STORE.lists, next);
+  };
+  const persistTop5 = async (next) => {
+    setTop5(next);
+    if (!(await saveKey(STORE.top5, next))) notify("Couldn't save — try again.");
+    pushToCloud(STORE.top5, next);
+  };
+  const persistMovieCache = async (next) => {
+    setMovieCache(next);
+    if (!(await saveKey(STORE.movieCache, next))) notify("Couldn't save — try again.");
+    pushToCloud(STORE.movieCache, next);
+  };
+  const cacheMovie = (movie) => {
+    // movie: a TMDB search-result-shaped object
+    const id = String(movie.id);
+    if (entries[id] || movieCache[id]) return; // already have richer or equal info
+    persistMovieCache({
+      ...movieCache,
+      [id]: { title: movie.title, posterPath: movie.poster_path || null, releaseDate: movie.release_date || "" },
+    });
+  };
+  const persistKey = async (key) => {
+    setApiKey(key);
+    const settings = await loadKey(STORE.settings, {});
+    if (await saveKey(STORE.settings, { ...settings, apiKey: key })) notify("API key saved.");
+    else notify("Couldn't save the key — try again.");
+  };
+
+  /* cloud sync connect / disconnect */
+  const connectSync = async (url, key) => {
+    const cloud = await syncPullAll(url, key);
+    if (cloud === null) {
+      notify("Couldn't reach that Supabase project. Check the URL/key and try again.");
+      return false;
+    }
+    const cloudHasData =
+      cloud[STORE.entries] !== undefined ||
+      cloud[STORE.lists] !== undefined ||
+      cloud[STORE.top5] !== undefined ||
+      cloud[STORE.movieCache] !== undefined;
+
+    if (cloudHasData) {
+      // another device already seeded this project — pull it down
+      const nextEntries = cloud[STORE.entries] !== undefined ? cloud[STORE.entries] : {};
+      const nextLists = cloud[STORE.lists] !== undefined ? cloud[STORE.lists] : [];
+      const nextTop5 =
+        Array.isArray(cloud[STORE.top5]) && cloud[STORE.top5].length === 5
+          ? cloud[STORE.top5]
+          : [null, null, null, null, null];
+      const nextMovieCache = cloud[STORE.movieCache] !== undefined ? cloud[STORE.movieCache] : {};
+      await Promise.all([
+        saveKey(STORE.entries, nextEntries),
+        saveKey(STORE.lists, nextLists),
+        saveKey(STORE.top5, nextTop5),
+        saveKey(STORE.movieCache, nextMovieCache),
+      ]);
+      setEntries(nextEntries);
+      setLists(nextLists);
+      setTop5(nextTop5);
+      setMovieCache(nextMovieCache);
+      notify("Connected — pulled your diary from the cloud.");
+    } else {
+      // first device to connect this project — seed it with what's already here
+      await Promise.all([
+        syncPush(url, key, STORE.entries, entries),
+        syncPush(url, key, STORE.lists, lists),
+        syncPush(url, key, STORE.top5, top5),
+        syncPush(url, key, STORE.movieCache, movieCache),
+      ]);
+      notify("Connected — this device's diary is now the shared copy.");
+    }
+
+    const settings = await loadKey(STORE.settings, {});
+    await saveKey(STORE.settings, { ...settings, supabaseUrl: url, supabaseKey: key });
+    setSyncUrl(url);
+    setSyncKey(key);
+    setSyncStatus("synced");
+    return true;
+  };
+
+  const disconnectSync = async () => {
+    const settings = await loadKey(STORE.settings, {});
+    await saveKey(STORE.settings, { ...settings, supabaseUrl: "", supabaseKey: "" });
+    setSyncUrl("");
+    setSyncKey("");
+    setSyncStatus("off");
+    notify("Disconnected — this device keeps its own local copy from here.");
+  };
+
+  const entryList = useMemo(() => Object.values(entries), [entries]);
+
+  const addEntry = async (entry) => {
+    await persistEntries({ ...entries, [entry.id]: entry });
+    notify(`Logged “${entry.title}.”`);
+  };
+
+  const updateEntry = async (id, patch) => {
+    if (!entries[id]) return;
+    await persistEntries({ ...entries, [id]: { ...entries[id], ...patch } });
+  };
+
+  const deleteEntry = async (id) => {
+    const next = { ...entries };
+    delete next[id];
+    await persistEntries(next);
+    await persistLists(lists.map((l) => ({ ...l, movieIds: l.movieIds.filter((m) => m !== id) })));
+    await persistTop5(top5.map((m) => (m === id ? null : m)));
+    setView({ name: "diary" });
+    notify("Entry removed.");
+  };
+
+  const activeNav = view.name === "detail" ? "diary" : view.name === "list" ? "lists" : view.name;
+
+      if (!loaded) {
+        return (
+          <div className="mvd">
+            <StyleTag />
+            <div className="app-loader">
+              <LogoMark size={44} />
+              <span>Loading your films…</span>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div className="mvd">
+          <StyleTag />
+          <header className="topbar">
+            <div className="topbar-inner">
+              <button className="brand" onClick={() => setView({ name: "diary" })} aria-label="Marquee home">
+                <LogoMark size={26} />
+                <span>MARQUEE</span>
+              </button>
+              <nav className="desktop-nav" aria-label="Main">
+                {NAV_ITEMS.map(({ name, label }) => (
+                  <button
+                    key={name}
+                    className={activeNav === name ? "active" : ""}
+                    aria-current={activeNav === name ? "page" : undefined}
+                    onClick={() => setView({ name })}
+                  >
+                    {label}
+                  </button>
+                ))}
+                <button className="desktop-log" onClick={() => setLogOpen(true)}>Log</button>
+              </nav>
+            </div>
+          </header>
+
+          <main className="stage">
+            {view.name === "diary" && (
+              <FilmsPage
+                entries={entries}
+                entryList={entryList}
+                top5={top5}
+                onChangeTop5={persistTop5}
+                openDetail={(id) => setView({ name: "detail", id })}
+                onLog={() => setLogOpen(true)}
+              />
+            )}
+            {view.name === "detail" && entries[view.id] && (
+              <DetailPage
+                entry={entries[view.id]}
+                tmdb={tmdb}
+                lists={lists}
+                onBack={() => setView({ name: "diary" })}
+                onUpdate={(patch) => updateEntry(view.id, patch)}
+                onDelete={() => deleteEntry(view.id)}
+                onAddToList={(listId) => {
+                  const next = lists.map((l) =>
+                    l.id === listId && !l.movieIds.includes(view.id)
+                      ? { ...l, movieIds: [...l.movieIds, view.id] }
+                      : l
+                  );
+                  persistLists(next);
+                  notify("Added to list.");
+                }}
+                notify={notify}
+              />
+            )}
+            {view.name === "lists" && (
+              <ListsPage
+            lists={lists}
+            entries={entries}
+            movieCache={movieCache}
+            onCreate={(name) => persistLists([...lists, { id: uid(), name, movieIds: [] }])}
+            onOpen={(id) => setView({ name: "list", id })}
+            onDelete={(id) => persistLists(lists.filter((l) => l.id !== id))}
+          />
+        )}
+        {view.name === "list" && (
+          <ListDetail
+            list={lists.find((l) => l.id === view.id)}
+            entries={entries}
+            movieCache={movieCache}
+            tmdb={tmdb}
+            onCacheMovie={cacheMovie}
+            onBack={() => setView({ name: "lists" })}
+            onOpenMovie={(id) => setView({ name: "detail", id })}
+            onUpdate={(patch) =>
+              persistLists(lists.map((l) => (l.id === view.id ? { ...l, ...patch } : l)))
+            }
+          />
+        )}
+            {view.name === "stats" && <StatsPage entries={entryList} />}
+            {view.name === "settings" && (
+              <SettingsPage
+                apiKey={apiKey}
+                onSave={persistKey}
+                tmdb={tmdb}
+                syncUrl={syncUrl}
+                syncKey={syncKey}
+                syncStatus={syncStatus}
+                onConnectSync={connectSync}
+                onDisconnectSync={disconnectSync}
+              />
+            )}
+          </main>
+
+          <nav className="bottombar" aria-label="Main">
+            {NAV_ITEMS.slice(0, 2).map(({ name, label }) => (
+              <button
+                key={name}
+                className={"tab-link" + (activeNav === name ? " active" : "")}
+                aria-current={activeNav === name ? "page" : undefined}
+                onClick={() => setView({ name })}
+              >
+                <span className="tab-label">{label}</span>
+              </button>
+            ))}
+            <button className="tab-link-log" onClick={() => setLogOpen(true)} aria-label="Log a movie">
+              <span className="tab-link-log-label">Log</span>
+            </button>
+            {NAV_ITEMS.slice(2).map(({ name, label }) => (
+              <button
+                key={name}
+                className={"tab-link" + (activeNav === name ? " active" : "")}
+                aria-current={activeNav === name ? "page" : undefined}
+                onClick={() => setView({ name })}
+              >
+                <span className="tab-label">{label}</span>
+              </button>
+            ))}
+          </nav>
+
+          {logOpen && (
+            <LogModal
+              tmdb={tmdb}
+              hasKey={!!apiKey}
+              existing={entries}
+              onClose={() => setLogOpen(false)}
+              onSave={async (entry) => {
+                await addEntry(entry);
+                setLogOpen(false);
+              }}
+              goSettings={() => {
+                setLogOpen(false);
+                setView({ name: "settings" });
+              }}
+            />
+          )}
+
+          {toast && <div className="toast" role="status">{toast}</div>}
+        </div>
+      );
+    }
+
+    /* ---------------- diary grid ---------------- */
+
+    function Top5Strip({ top5, entries, onChange, onOpenMovie }) {
+      const [pickingSlot, setPickingSlot] = useState(null);
+      const [filter, setFilter] = useState("");
+      const [editing, setEditing] = useState(false);
+
+      const candidates = useMemo(
+        () =>
+          Object.values(entries)
+            .filter((e) => e.title.toLowerCase().includes(filter.toLowerCase()))
+            .sort((a, b) => b.rating - a.rating),
+        [entries, filter]
+      );
+
+      const setSlot = (slot, id) => {
+        const next = top5.map((m) => (m === id ? null : m)); // no duplicates
+        next[slot] = id;
+        onChange(next);
+        setPickingSlot(null);
+        setFilter("");
+      };
+
+      const move = (idx, dir) => {
+        const j = idx + dir;
+        if (j < 0 || j > 4) return;
+        const next = [...top5];
+        [next[idx], next[j]] = [next[j], next[idx]];
+        onChange(next);
+      };
+
+      return (
+        <div className="top5-strip">
+          <div className="top5-head">
+            <div>
+              <div className="eyebrow">Personal ranking</div>
+              <h2>Your Top 5</h2>
+            </div>
+            <button
+              className={"btn-ghost" + (editing ? " active" : "")}
+              onClick={() => setEditing((value) => !value)}
+              aria-pressed={editing}
+            >
+              {editing ? "Done" : "Edit"}
+            </button>
+          </div>
+          <ol className="marquee-board">
+            {top5.map((id, idx) => {
+              const e = id ? entries[id] : null;
+              const p = e ? e.chosenPoster || e.posterPath : null;
+              return (
+                <li className={"marquee-slot" + (e ? " filled" : "")} key={idx}>
+                  <span className="marquee-rank" aria-hidden="true">{String(idx + 1).padStart(2, "0")}</span>
+                  {e ? (
+                    <>
+                      <button className="marquee-poster" onClick={() => onOpenMovie(id)} aria-label={`Open ${e.title}`}>
+                        {p ? <img src={IMG + "w342" + p} alt="" loading="lazy" /> : <div className="poster-blank"><span>{e.title}</span></div>}
+                      </button>
+                      <div className="marquee-title">{e.title}</div>
+                      {editing && (
+                        <div className="rank-controls">
+                          <button className="icon-btn" onClick={() => move(idx, -1)} disabled={idx === 0} aria-label="Move up in ranking">←</button>
+                          <button className="icon-btn" onClick={() => move(idx, 1)} disabled={idx === 4} aria-label="Move down in ranking">→</button>
+                          <button className="btn-ghost" onClick={() => setPickingSlot(idx)} aria-label={`Replace number ${idx + 1}`}>Replace</button>
+                          <button className="icon-btn danger" onClick={() => setSlot(idx, null)} aria-label={`Clear number ${idx + 1}`}>✕</button>
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <button className="marquee-empty" onClick={() => setPickingSlot(idx)} aria-label={`Pick film number ${idx + 1}`}>
+                      <IconPlus />
+                      <span>Pick a film</span>
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+          </ol>
+
+          {pickingSlot != null && (
+            <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && setPickingSlot(null)}>
+              <div className="modal" role="dialog" aria-modal="true" aria-label={`Pick number ${pickingSlot + 1}`}>
+                <div className="modal-head">
+                  <h2>Choose a film</h2>
+                  <button className="btn-ghost" onClick={() => setPickingSlot(null)} aria-label="Close">✕</button>
+                </div>
+                {Object.keys(entries).length === 0 ? (
+                  <p className="quiet-note">Log some movies first — the Top 5 draws from your films.</p>
+                ) : (
+                  <>
+                    <input
+                      className="search-big"
+                      type="search"
+                      placeholder="Filter your films…"
+                      value={filter}
+                      onChange={(e) => setFilter(e.target.value)}
+                      autoFocus
+                    />
+                    <ul className="results">
+                      {candidates.map((e) => (
+                        <li key={e.id}>
+                          <button className="result" onClick={() => setSlot(pickingSlot, e.id)}>
+                            {(e.chosenPoster || e.posterPath) ? (
+                              <img src={IMG + "w92" + (e.chosenPoster || e.posterPath)} alt="" loading="lazy" />
+                            ) : (
+                              <div className="thumb-blank" />
+                            )}
+                            <span className="result-title">{e.title}</span>
+                            <span className="result-year">{yearOf(e)}</span>
+                            <StarDisplay value={e.rating} size={12} />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    /* ---------------- films page (Top 5 + grid) ---------------- */
+
+    function FilmsPage({ entries, entryList, top5, onChangeTop5, openDetail, onLog }) {
+      const [tab, setTab] = useState("all"); // 'all' | 'top5'
+      const [sort, setSort] = useState("watched-desc");
+      const [minRating, setMinRating] = useState(0);
+      const [query, setQuery] = useState("");
+      const [searchOpen, setSearchOpen] = useState(false);
+      const searchRef = useRef(null);
+
+      useEffect(() => {
+        if (searchOpen && searchRef.current) searchRef.current.focus();
+      }, [searchOpen]);
+
+      const shown = useMemo(() => {
+        let list = entryList.filter(
+          (e) => e.rating >= minRating && e.title.toLowerCase().includes(query.toLowerCase())
+        );
+        const by = {
+          "watched-desc": (a, b) => b.watchedDate.localeCompare(a.watchedDate) || b.loggedAt - a.loggedAt,
+          "watched-asc": (a, b) => a.watchedDate.localeCompare(b.watchedDate) || a.loggedAt - b.loggedAt,
+          "rating-desc": (a, b) => b.rating - a.rating,
+          "rating-asc": (a, b) => a.rating - b.rating,
+          "title": (a, b) => a.title.localeCompare(b.title),
+          "year-desc": (a, b) => (b.releaseDate || "").localeCompare(a.releaseDate || ""),
+          "year-asc": (a, b) => (a.releaseDate || "").localeCompare(b.releaseDate || ""),
+        };
+        return [...list].sort(by[sort]);
+      }, [entryList, sort, minRating, query]);
+
+      const closeSearch = () => {
+        setQuery("");
+        setSearchOpen(false);
+      };
+
+      if (entryList.length === 0) {
+        return (
+          <section>
+            <div className="empty-house">
+              <div className="empty-mark" aria-hidden="true">01</div>
+              <h2>Nothing logged yet</h2>
+              <p>Log the first movie you've watched to start your film archive.</p>
+              <button className="btn-log" onClick={onLog}>+ Log a movie</button>
+            </div>
+          </section>
+        );
+      }
+
+      return (
+        <section>
+          <div className="films-head">
+            <h1 className="page-head">Films</h1>
+            <div className="top-tabs" role="tablist" aria-label="Films view">
+              <button
+                role="tab"
+                aria-selected={tab === "all"}
+                className={"top-tab" + (tab === "all" ? " active" : "")}
+                onClick={() => setTab("all")}
+              >
+                Films
+              </button>
+              <button
+                role="tab"
+                aria-selected={tab === "top5"}
+                className={"top-tab" + (tab === "top5" ? " active" : "")}
+                onClick={() => setTab("top5")}
+              >
+                Top 5
+              </button>
+            </div>
+          </div>
+
+          {tab === "top5" ? (
+            <Top5Strip top5={top5} entries={entries} onChange={onChangeTop5} onOpenMovie={openDetail} />
+          ) : (
+            <>
+              <div className="controls-collapsed">
+                <select className="pill-select" value={sort} onChange={(e) => setSort(e.target.value)} aria-label="Sort by">
+                  <option value="watched-desc">↕ Newest</option>
+                  <option value="watched-asc">↕ Oldest</option>
+                  <option value="rating-desc">↕ Highest rated</option>
+                  <option value="rating-asc">↕ Lowest rated</option>
+                  <option value="title">↕ Title A–Z</option>
+                  <option value="year-desc">↕ Release year · newest</option>
+                  <option value="year-asc">↕ Release year · oldest</option>
+                </select>
+                <select
+                  className="pill-select"
+                  value={minRating}
+                  onChange={(e) => setMinRating(Number(e.target.value))}
+                  aria-label="Minimum rating"
+                >
+                  <option value={0}>★ Any rating</option>
+                  {[1, 2, 3, 3.5, 4, 4.5, 5].map((r) => (
+                    <option key={r} value={r}>★ {r}+</option>
+                  ))}
+                </select>
+
+                {searchOpen ? (
+                  <div className="search-expand">
+                    <input
+                      ref={searchRef}
+                      type="search"
+                      placeholder="Search your films…"
+                      value={query}
+                      onChange={(e) => setQuery(e.target.value)}
+                      onBlur={() => { if (!query) setSearchOpen(false); }}
+                    />
+                    <button className="icon-btn" onClick={closeSearch} aria-label="Close search">✕</button>
+                  </div>
+                ) : (
+                  <button className="icon-btn" onClick={() => setSearchOpen(true)} aria-label="Search your films">
+                    <IconSearch />
+                  </button>
+                )}
+
+                <span className="count">{shown.length} of {entryList.length}</span>
+              </div>
+
+              <div className="grid">
+                {shown.map((e) => (
+                  <FilmCard key={e.id} entry={e} onOpen={() => openDetail(e.id)} />
+                ))}
+              </div>
+              {shown.length === 0 && <p className="quiet-note">No films match those filters.</p>}
+            </>
+          )}
+        </section>
+      );
+    }
+
+    /* ---------------- log modal (search + form) ---------------- */
+
+    function LogModal({ tmdb, hasKey, existing, onClose, onSave, goSettings }) {
+      const [query, setQuery] = useState("");
+      const [results, setResults] = useState([]);
+      const [searching, setSearching] = useState(false);
+      const [error, setError] = useState(null);
+      const [picked, setPicked] = useState(null); // TMDB movie object
+      const [selectedPoster, setSelectedPoster] = useState(null);
+      const [posters, setPosters] = useState(null); // null = not loaded
+      const [postersError, setPostersError] = useState(null);
+      const [loadingPosters, setLoadingPosters] = useState(false);
+      const [rating, setRating] = useState(0);
+      const [watchedDate, setWatchedDate] = useState(todayISO());
+      const [review, setReview] = useState("");
+      const inputRef = useRef(null);
+      const timer = useRef(null);
+
+      useEffect(() => {
+        inputRef.current && inputRef.current.focus();
+      }, []);
+
+      useEffect(() => {
+        const onKey = (e) => e.key === "Escape" && onClose();
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
+      }, [onClose]);
+
+      useEffect(() => {
+        window.clearTimeout(timer.current);
+        if (!query.trim()) {
+          setResults([]);
+          setError(null);
+          return;
+        }
+        timer.current = window.setTimeout(async () => {
+          setSearching(true);
+          setError(null);
+          try {
+            const data = await tmdb("/search/movie", { query: query.trim(), include_adult: "false" });
+            setResults((data.results || []).slice(0, 12));
+          } catch (err) {
+            setError(friendlyError(err));
+            setResults([]);
+          } finally {
+            setSearching(false);
+          }
+        }, 400);
+        return () => window.clearTimeout(timer.current);
+      }, [query, tmdb]);
+
+      const loadPosters = async () => {
+        setLoadingPosters(true);
+        setPostersError(null);
+        try {
+          const data = await tmdb("/movie/" + picked.id + "/images", {});
+          const sorted = (data.posters || []).sort((a, b) => b.vote_count - a.vote_count);
+          setPosters(sorted);
+        } catch (err) {
+          setPostersError(friendlyError(err));
+        } finally {
+          setLoadingPosters(false);
+        }
+      };
+
+      const save = async () => {
+        if (!picked || !rating) return;
+        let genres = [];
+        let runtime = null;
+        try {
+          const detail = await tmdb("/movie/" + picked.id, {});
+          genres = (detail.genres || []).map((g) => g.name);
+          runtime = detail.runtime || null;
+        } catch (e) {
+          /* not critical — log without genre data */
+        }
+        onSave({
+          id: String(picked.id),
+          title: picked.title,
+          releaseDate: picked.release_date || "",
+          posterPath: selectedPoster || picked.poster_path || null,
+          chosenPoster: null,
+          rating,
+          review: review.trim(),
+          watchedDate,
+          genres,
+          runtime,
+          loggedAt: Date.now(),
+        });
+      };
+
+      return (
+        <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+          <div className="modal" role="dialog" aria-modal="true" aria-label="Log a movie">
+            <div className="modal-head">
+              <h2>{picked ? "Movie details" : "Log a movie"}</h2>
+              <button className="btn-ghost" onClick={onClose} aria-label="Close">✕</button>
+            </div>
+
+            {!hasKey && (
+              <div className="notice">
+                You'll need a TMDB API key before searching.{" "}
+                <button className="link" onClick={goSettings}>Open Settings</button>
+              </div>
+            )}
+
+            {!picked && (
+              <>
+                <input
+                  ref={inputRef}
+                  className="search-big"
+                  type="search"
+                  placeholder="Search TMDB by title…"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  disabled={!hasKey}
+                />
+                {error && <div className="notice error">{error}</div>}
+                {searching && <div className="quiet-note">Searching…</div>}
+                <ul className="results">
+                  {results.map((m) => (
+                    <li key={m.id}>
+                      <button
+                        className="result"
+                        onClick={() => {
+                          setPicked(m);
+                          setSelectedPoster(null);
+                          setPosters(null);
+                          setPostersError(null);
+                        }}
+                      >
+                        {m.poster_path ? (
+                          <img src={IMG + "w92" + m.poster_path} alt="" loading="lazy" />
+                        ) : (
+                          <div className="thumb-blank" aria-hidden="true" />
+                        )}
+                        <span className="result-title">{m.title}</span>
+                        <span className="result-year">{m.release_date ? m.release_date.slice(0, 4) : ""}</span>
+                        {existing[String(m.id)] && <span className="result-flag">already logged</span>}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                {!searching && query && results.length === 0 && !error && hasKey && (
+                  <p className="quiet-note">No matches. Check the spelling or try a shorter title.</p>
+                )}
+              </>
+            )}
+
+            {picked && (
+              <>
+                <div className="log-form">
+                  <div className="log-form-poster">
+                    {(selectedPoster || picked.poster_path) ? (
+                      <img src={IMG + "w342" + (selectedPoster || picked.poster_path)} alt={picked.title + " poster"} />
+                    ) : (
+                      <div className="poster-blank"><span>{picked.title}</span></div>
+                    )}
+                    {posters === null && !loadingPosters && !postersError && (
+                      <button className="btn-ghost poster-change-btn" onClick={loadPosters}>Change poster</button>
+                    )}
+                    {loadingPosters && <p className="quiet-note">Loading posters…</p>}
+                    {postersError && (
+                      <div className="notice error">
+                        {postersError} <button className="link" onClick={loadPosters}>Retry</button>
+                      </div>
+                    )}
+                  </div>
+                  <div className="log-form-fields">
+                    <h3 className="film-title">{picked.title}
+                      <span className="film-year"> {picked.release_date ? picked.release_date.slice(0, 4) : ""}</span>
+                    </h3>
+                    <FilmFacts tmdb={tmdb} movieId={picked.id} overview={picked.overview} />
+                    <label className="field">
+                      <span>Watched on</span>
+                      <input type="date" value={watchedDate} max={todayISO()} onChange={(e) => setWatchedDate(e.target.value)} />
+                    </label>
+                    <div className="field">
+                      <span>Your rating</span>
+                      <StarInput value={rating} onChange={setRating} />
+                    </div>
+                    <label className="field">
+                      <span>Review <em>(optional)</em></span>
+                      <textarea
+                        rows={5}
+                        placeholder="What stuck with you?"
+                        value={review}
+                        onChange={(e) => setReview(e.target.value)}
+                      />
+                    </label>
+                    <div className="row-end">
+                      <button className="btn-ghost" onClick={() => setPicked(null)}>← Back to search</button>
+                      <button className="btn-log" disabled={!rating} onClick={save}>
+                        {rating ? "Add to films" : "Pick a rating first"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {posters && posters.length > 0 && (
+                  <div className="poster-picker">
+                    <p className="quiet-note">{posters.length} posters · click one to use it</p>
+                    <div className="poster-grid">
+                      {posters.map((p) => {
+                        const active = (selectedPoster || picked.poster_path) === p.file_path;
+                        return (
+                          <button
+                            key={p.file_path}
+                            className={"poster-option" + (active ? " active" : "")}
+                            onClick={() => setSelectedPoster(p.file_path)}
+                            aria-label={`Use ${p.iso_639_1 ? p.iso_639_1.toUpperCase() : "textless"} poster`}
+                            aria-pressed={active}
+                          >
+                            <img src={IMG + "w185" + p.file_path} alt="" loading="lazy" />
+                            <span className="poster-lang">{p.iso_639_1 ? p.iso_639_1.toUpperCase() : "—"}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+                {posters && posters.length === 0 && (
+                  <p className="quiet-note">TMDB has no alternate posters for this one.</p>
+                )}
+              </>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    /* ---------------- detail page ---------------- */
+
+    function DetailPage({ entry, tmdb, lists, onBack, onUpdate, onDelete, onAddToList, notify }) {
+      const [editingReview, setEditingReview] = useState(false);
+      const [reviewDraft, setReviewDraft] = useState(entry.review);
+      const [posters, setPosters] = useState(null); // null = not loaded
+      const [postersError, setPostersError] = useState(null);
+      const [loadingPosters, setLoadingPosters] = useState(false);
+      const [confirmDelete, setConfirmDelete] = useState(false);
+      const [listPick, setListPick] = useState("");
+
+      const poster = entry.chosenPoster || entry.posterPath;
+
+      const loadPosters = async () => {
+        setLoadingPosters(true);
+        setPostersError(null);
+        try {
+          const data = await tmdb("/movie/" + entry.id + "/images", {});
+          const sorted = (data.posters || []).sort((a, b) => b.vote_count - a.vote_count);
+          setPosters(sorted);
+        } catch (err) {
+          setPostersError(friendlyError(err));
+        } finally {
+          setLoadingPosters(false);
+        }
+      };
+
+      return (
+        <section className="detail">
+          <button className="btn-ghost back" onClick={onBack}>← Films</button>
+
+          <div className="detail-main">
+            <div className="detail-poster">
+              {poster ? (
+                <img src={IMG + "w500" + poster} alt={entry.title + " poster"} />
+              ) : (
+                <div className="poster-blank tall"><span>{entry.title}</span></div>
+              )}
+            </div>
+
+            <div className="detail-info">
+              <h1 className="film-title big">{entry.title}
+                <span className="film-year"> {yearOf(entry)}</span>
+              </h1>
+              <div className="detail-facts">
+                {entry.genres && entry.genres.length > 0 && <span>{entry.genres.join(" · ")}</span>}
+                {entry.runtime && <span>{entry.runtime} min</span>}
+              </div>
+              <FilmFacts tmdb={tmdb} movieId={entry.id} />
+
+              <div className="field">
+                <span>Your rating</span>
+                <StarInput value={entry.rating} onChange={(r) => onUpdate({ rating: r })} />
+              </div>
+
+              <label className="field">
+                <span>Watched on</span>
+                <input
+                  type="date"
+                  value={entry.watchedDate}
+                  max={todayISO()}
+                  onChange={(e) => onUpdate({ watchedDate: e.target.value })}
+                />
+              </label>
+
+              <div className="field">
+                <span>Review</span>
+                {editingReview ? (
+                  <>
+                    <textarea rows={6} value={reviewDraft} onChange={(e) => setReviewDraft(e.target.value)} />
+                    <div className="row-end">
+                      <button className="btn-ghost" onClick={() => { setReviewDraft(entry.review); setEditingReview(false); }}>Cancel</button>
+                      <button className="btn-log" onClick={() => { onUpdate({ review: reviewDraft.trim() }); setEditingReview(false); }}>Save review</button>
+                    </div>
+                  </>
+                ) : (
+                  <>
+                    {entry.review ? <p className="review-text">{entry.review}</p> : <p className="quiet-note">No review yet.</p>}
+                    <button className="btn-ghost" onClick={() => { setReviewDraft(entry.review); setEditingReview(true); }}>
+                      {entry.review ? "Edit review" : "Write a review"}
+                    </button>
+                  </>
+                )}
+              </div>
+
+              {lists.length > 0 && (
+                <div className="field">
+                  <span>Add to a list</span>
+                  <div className="row">
+                    <select value={listPick} onChange={(e) => setListPick(e.target.value)}>
+                      <option value="">Choose a list…</option>
+                      {lists.map((l) => (
+                        <option key={l.id} value={l.id} disabled={l.movieIds.includes(entry.id)}>
+                          {l.name}{l.movieIds.includes(entry.id) ? " (already in)" : ""}
+                        </option>
+                      ))}
+                    </select>
+                    <button className="btn-ghost" disabled={!listPick} onClick={() => { onAddToList(listPick); setListPick(""); }}>
+                      Add
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              <div className="danger-zone">
+                {confirmDelete ? (
+                  <div className="row">
+                    <span className="quiet-note">Remove this entry and its review?</span>
+                    <button className="btn-danger" onClick={onDelete}>Yes, remove</button>
+                    <button className="btn-ghost" onClick={() => setConfirmDelete(false)}>Keep it</button>
+                  </div>
+                ) : (
+                  <button className="btn-ghost danger" onClick={() => setConfirmDelete(true)}>Remove from films</button>
+                )}
+              </div>
+            </div>
+          </div>
+
+          <div className="poster-picker">
+            <h2 className="section-head">Alternate posters</h2>
+            {posters === null && !loadingPosters && !postersError && (
+              <button className="btn-ghost" onClick={loadPosters}>Change poster</button>
+            )}
+            {loadingPosters && <p className="quiet-note">Pulling posters…</p>}
+            {postersError && (
+              <div className="notice error">
+                {postersError} <button className="link" onClick={loadPosters}>Retry</button>
+              </div>
+            )}
+            {posters && posters.length === 0 && <p className="quiet-note">TMDB has no alternate posters for this one.</p>}
+            {posters && posters.length > 0 && (
+              <>
+                <p className="quiet-note">{posters.length} posters · click one to make it this entry's poster</p>
+                <div className="poster-grid">
+                  {posters.map((p) => {
+                    const active = (entry.chosenPoster || entry.posterPath) === p.file_path;
+                    return (
+                      <button
+                        key={p.file_path}
+                        className={"poster-option" + (active ? " active" : "")}
+                        onClick={() => { onUpdate({ chosenPoster: p.file_path }); notify("Poster updated."); }}
+                        aria-label={`Use ${p.iso_639_1 ? p.iso_639_1.toUpperCase() : "textless"} poster`}
+                        aria-pressed={active}
+                      >
+                        <img src={IMG + "w185" + p.file_path} alt="" loading="lazy" />
+                        <span className="poster-lang">{p.iso_639_1 ? p.iso_639_1.toUpperCase() : "—"}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </>
+            )}
+          </div>
+        </section>
+      );
+    }
+
+    /* ---------------- lists ---------------- */
+
+    function ListsPage({ lists, entries, movieCache, onCreate, onOpen, onDelete }) {
+  const [name, setName] = useState("");
+  const [confirm, setConfirm] = useState(null);
+
+  return (
+    <section>
+      <h1 className="page-head">Lists</h1>
+      <div className="row list-create">
+        <input
+          type="text"
+          placeholder="New list — e.g. Best of 2026"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && name.trim()) { onCreate(name.trim()); setName(""); } }}
+        />
+        <button className="btn-log" disabled={!name.trim()} onClick={() => { onCreate(name.trim()); setName(""); }}>
+          Create list
+        </button>
+      </div>
+
+      {lists.length === 0 && (
+        <p className="quiet-note">No lists yet. Make one for anything — a year's best, a rewatch pile, a director run.</p>
+      )}
+
+      <div className="list-cards">
+        {lists.map((l) => {
+          const covers = l.movieIds.slice(0, 4).map((id) => resolveMovie(id, entries, movieCache)).filter(Boolean);
+          return (
+            <div className="list-card" key={l.id}>
+              <button className="list-card-open" onClick={() => onOpen(l.id)}>
+                <div className="list-covers" aria-hidden="true">
+                  {covers.length === 0 && <div className="thumb-blank" />}
+                  {covers.map((m) =>
+                    m.posterPath ? (
+                      <img key={m.id} src={IMG + "w92" + m.posterPath} alt="" loading="lazy" />
+                    ) : (
+                      <div className="thumb-blank" key={m.id} />
+                    )
+                  )}
+                </div>
+                <div>
+                  <div className="list-name">{l.name}</div>
+                  <div className="quiet-note">{l.movieIds.length} {l.movieIds.length === 1 ? "movie" : "movies"}</div>
+                </div>
+              </button>
+              {confirm === l.id ? (
+                <div className="row">
+                  <button className="btn-danger" onClick={() => { onDelete(l.id); setConfirm(null); }}>Delete</button>
+                  <button className="btn-ghost" onClick={() => setConfirm(null)}>Keep</button>
+                </div>
+              ) : (
+                <button className="btn-ghost danger" onClick={() => setConfirm(l.id)} aria-label={`Delete list ${l.name}`}>✕</button>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+    function ListDetail({ list, entries, movieCache, tmdb, onCacheMovie, onBack, onOpenMovie, onUpdate }) {
+  const [renaming, setRenaming] = useState(false);
+  const [nameDraft, setNameDraft] = useState(list ? list.name : "");
+  const [adding, setAdding] = useState(false);
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState(null);
+  const searchRef = useRef(null);
+  const timer = useRef(null);
+
+  useEffect(() => {
+    if (adding && searchRef.current) searchRef.current.focus();
+  }, [adding]);
+
+  useEffect(() => {
+    if (!adding) return;
+    window.clearTimeout(timer.current);
+    if (!query.trim()) {
+      setResults([]);
+      setSearchError(null);
+      return;
+    }
+    timer.current = window.setTimeout(async () => {
+      setSearching(true);
+      setSearchError(null);
+      try {
+        const data = await tmdb("/search/movie", { query: query.trim(), include_adult: "false" });
+        setResults((data.results || []).slice(0, 12));
+      } catch (err) {
+        setSearchError(friendlyError(err));
+        setResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 400);
+    return () => window.clearTimeout(timer.current);
+  }, [query, adding, tmdb]);
+
+  if (!list) return <p className="quiet-note">That list is gone.</p>;
+
+  const move = (idx, dir) => {
+    const next = [...list.movieIds];
+    const j = idx + dir;
+    if (j < 0 || j >= next.length) return;
+    [next[idx], next[j]] = [next[j], next[idx]];
+    onUpdate({ movieIds: next });
+  };
+
+  const addMovie = (movie) => {
+    const id = String(movie.id);
+    onCacheMovie(movie);
+    if (!list.movieIds.includes(id)) {
+      onUpdate({ movieIds: [...list.movieIds, id] });
+    }
+  };
+
+  const closeAdding = () => {
+    setAdding(false);
+    setQuery("");
+    setResults([]);
+    setSearchError(null);
+  };
+
+  return (
+    <section>
+      <button className="btn-ghost back" onClick={onBack}>← Lists</button>
+      {renaming ? (
+        <div className="row">
+          <input type="text" value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} autoFocus />
+          <button className="btn-log" onClick={() => { onUpdate({ name: nameDraft.trim() || list.name }); setRenaming(false); }}>Save</button>
+        </div>
+      ) : (
+        <h1 className="page-head list-head">
+          <span>{list.name}</span>
+          <span className="list-head-actions">
+            <button className="icon-btn" onClick={() => { setNameDraft(list.name); setRenaming(true); }} aria-label="Rename list">
+              <IconEdit />
+            </button>
+            <button className="icon-btn" onClick={() => setAdding(true)} aria-label="Add films to this list">
+              <IconPlus />
+            </button>
+          </span>
+        </h1>
+      )}
+
+      {list.movieIds.length === 0 && (
+        <p className="quiet-note">Empty so far. Tap + above to search for and add any film.</p>
+      )}
+
+      <ol className="list-rows">
+        {list.movieIds.map((id, idx) => {
+          const m = resolveMovie(id, entries, movieCache);
+          if (!m) return null;
+          return (
+            <li className="list-row" key={id}>
+              <span className="list-row-num">{idx + 1}</span>
+              <button className="list-row-main" onClick={() => onOpenMovie(id)} disabled={!m.logged}>
+                {m.posterPath ? <img src={IMG + "w92" + m.posterPath} alt="" loading="lazy" /> : <div className="thumb-blank" />}
+                <span className="result-title">{m.title}</span>
+                <span className="result-year">{yearOf(m)}</span>
+                {m.logged ? <StarDisplay value={entries[id].rating} size={12} /> : <span className="result-flag">not logged</span>}
+              </button>
+              <div className="row-btns">
+                <button className="btn-ghost" onClick={() => move(idx, -1)} disabled={idx === 0} aria-label={`Move ${m.title} up`}>↑</button>
+                <button className="btn-ghost" onClick={() => move(idx, 1)} disabled={idx === list.movieIds.length - 1} aria-label={`Move ${m.title} down`}>↓</button>
+                <button
+                  className="btn-ghost danger"
+                  aria-label={`Remove ${m.title} from list`}
+                  onClick={() => onUpdate({ movieIds: list.movieIds.filter((x) => x !== id) })}
+                >✕</button>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+
+      {adding && (
+        <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && closeAdding()}>
+          <div className="modal" role="dialog" aria-modal="true" aria-label="Add films to list">
+            <div className="modal-head">
+              <h2>Add to &ldquo;{list.name}&rdquo;</h2>
+              <button className="btn-ghost" onClick={closeAdding} aria-label="Close">✕</button>
+            </div>
+            <input
+              ref={searchRef}
+              className="search-big"
+              type="search"
+              placeholder="Search TMDB by title…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            {searchError && <div className="notice error">{searchError}</div>}
+            {searching && <div className="quiet-note">Searching…</div>}
+            <ul className="results">
+              {results.map((r) => {
+                const already = list.movieIds.includes(String(r.id));
+                return (
+                  <li key={r.id}>
+                    <button className="result" onClick={() => addMovie(r)}>
+                      {r.poster_path ? (
+                        <img src={IMG + "w92" + r.poster_path} alt="" loading="lazy" />
+                      ) : (
+                        <div className="thumb-blank" />
+                      )}
+                      <span className="result-title">{r.title}</span>
+                      <span className="result-year">{r.release_date ? r.release_date.slice(0, 4) : ""}</span>
+                      {already && <span className="result-flag">added</span>}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+            {!searching && query && results.length === 0 && !searchError && (
+              <p className="quiet-note">No matches. Check the spelling or try a shorter title.</p>
+            )}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+    function StatsPage({ entries }) {
+      const stats = useMemo(() => {
+        if (entries.length === 0) return null;
+        const avg = entries.reduce((s, e) => s + e.rating, 0) / entries.length;
+
+        const genreCount = {};
+        entries.forEach((e) => (e.genres || []).forEach((g) => (genreCount[g] = (genreCount[g] || 0) + 1)));
+        const topGenre = Object.entries(genreCount).sort((a, b) => b[1] - a[1])[0];
+
+        const decadeCount = {};
+        entries.forEach((e) => {
+          const y = e.releaseDate ? Number(e.releaseDate.slice(0, 4)) : null;
+          if (y) {
+            const d = Math.floor(y / 10) * 10;
+            decadeCount[d] = (decadeCount[d] || 0) + 1;
+          }
+        });
+        const topDecade = Object.entries(decadeCount).sort((a, b) => b[1] - a[1])[0];
+
+        // last 12 months
+        const months = [];
+        const now = new Date();
+        for (let i = 11; i >= 0; i--) {
+          const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+          const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+          months.push({ key, label: d.toLocaleDateString(undefined, { month: "short" }), count: 0 });
+        }
+        entries.forEach((e) => {
+          const key = (e.watchedDate || "").slice(0, 7);
+          const m = months.find((x) => x.key === key);
+          if (m) m.count++;
+        });
+        const maxMonth = Math.max(1, ...months.map((m) => m.count));
+
+        const ratingDist = {};
+        entries.forEach((e) => (ratingDist[e.rating] = (ratingDist[e.rating] || 0) + 1));
+
+        return { avg, topGenre, topDecade, months, maxMonth, ratingDist };
+      }, [entries]);
+
+      if (!stats) {
+        return (
+          <section>
+            <h1 className="page-head">Stats</h1>
+            <p className="quiet-note">Numbers show up once you've logged a few movies.</p>
+          </section>
+        );
+      }
+
+      return (
+        <section>
+          <h1 className="page-head">Stats</h1>
+          <div className="stat-cards">
+            <div className="stat-card">
+              <div className="stat-num">{entries.length}</div>
+              <div className="stat-label">movies logged</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-num">{stats.avg.toFixed(2)}</div>
+              <div className="stat-label">average rating</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-num small">{stats.topGenre ? stats.topGenre[0] : "—"}</div>
+              <div className="stat-label">most-logged genre{stats.topGenre ? ` (${stats.topGenre[1]})` : ""}</div>
+            </div>
+            <div className="stat-card">
+              <div className="stat-num small">{stats.topDecade ? stats.topDecade[0] + "s" : "—"}</div>
+              <div className="stat-label">most-logged decade{stats.topDecade ? ` (${stats.topDecade[1]})` : ""}</div>
+            </div>
+          </div>
+
+          <h2 className="section-head">Movies by month</h2>
+          <div className="bar-chart" role="img" aria-label="Movies watched per month over the last year">
+            {stats.months.map((m) => (
+              <div className="bar-col" key={m.key}>
+                <div className="bar-val">{m.count > 0 ? m.count : ""}</div>
+                <div className="bar" style={{ height: (m.count / stats.maxMonth) * 120 + "px" }} />
+                <div className="bar-label">{m.label}</div>
+              </div>
+            ))}
+          </div>
+
+          <h2 className="section-head">Ratings</h2>
+          <div className="rating-histogram" role="img" aria-label="Rating distribution from half a star to five stars">
+            {[0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5].map((r) => {
+              const c = stats.ratingDist[r] || 0;
+              const max = Math.max(1, ...Object.values(stats.ratingDist));
+              return (
+                <div className="rating-column" key={r} aria-label={`${r} stars: ${c} movies`}>
+                  <span className="rating-count">{c || ""}</span>
+                  <div className="rating-track">
+                    <div
+                      className="rating-bar"
+                      style={{ height: Math.max(2, (c / max) * 120) + "px" }}
+                    />
+                  </div>
+                  <span className="rating-label">{r}</span>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      );
+    }
+
+    /* ---------------- settings ---------------- */
+
+    function SettingsPage({ apiKey, onSave, tmdb, syncUrl, syncKey, syncStatus, onConnectSync, onDisconnectSync }) {
+      const [draft, setDraft] = useState(apiKey);
+      const [testState, setTestState] = useState(null); // null | 'testing' | 'ok' | error string
+
+      const [urlDraft, setUrlDraft] = useState(syncUrl);
+      const [keyDraft, setKeyDraft] = useState(syncKey);
+      const [connecting, setConnecting] = useState(false);
+      const connected = !!(syncUrl && syncKey);
+
+      const test = async () => {
+        setTestState("testing");
+        try {
+          const t = buildTmdb(draft.trim());
+          await t("/configuration", {});
+          setTestState("ok");
+        } catch (err) {
+          setTestState(friendlyError(err));
+        }
+      };
+
+      const connect = async () => {
+        if (!urlDraft.trim() || !keyDraft.trim()) return;
+        setConnecting(true);
+        await onConnectSync(urlDraft.trim(), keyDraft.trim());
+        setConnecting(false);
+      };
+
+      return (
+        <section className="settings">
+          <h1 className="page-head">Settings</h1>
+          <div className="field">
+            <span>TMDB API key</span>
+            <input
+              type="text"
+              value={draft}
+              onChange={(e) => { setDraft(e.target.value); setTestState(null); }}
+              placeholder="Paste your v3 API key or v4 read access token"
+              autoComplete="off"
+              spellCheck={false}
+            />
+            <p className="quiet-note">
+              Free from themoviedb.org — sign in, then Settings → API. Either the short v3 key or the long
+              v4 token works here. It's stored only in this browser's local storage, on this device — never sent anywhere but TMDB.
+            </p>
+          </div>
+          <div className="row">
+            <button className="btn-log" disabled={!draft.trim()} onClick={() => onSave(draft.trim())}>Save key</button>
+            <button className="btn-ghost" disabled={!draft.trim() || testState === "testing"} onClick={test}>
+              {testState === "testing" ? "Testing…" : "Test connection"}
+            </button>
+          </div>
+          {testState === "ok" && <div className="notice good">Key works — TMDB answered.</div>}
+          {testState && testState !== "ok" && testState !== "testing" && <div className="notice error">{testState}</div>}
+
+          <h2 className="section-head">Cloud sync</h2>
+          <p className="quiet-note">
+            Optional. Connect a free Supabase project to keep the same diary in sync across every device.
+            Setup steps and the one-time SQL are in the repo's README.
+          </p>
+
+          {connected ? (
+            <>
+              <div className={"notice " + (syncStatus === "offline" ? "error" : "good")}>
+                {syncStatus === "offline"
+                  ? "Connected, but couldn't reach Supabase just now — using this device's local copy until it's back."
+                  : "Connected — this diary syncs across every device you connect."}
+              </div>
+              <p className="quiet-note" style={{ wordBreak: "break-all" }}>{syncUrl}</p>
+              <button className="btn-ghost danger" onClick={onDisconnectSync}>Disconnect this device</button>
+            </>
+          ) : (
+            <>
+              <div className="field">
+                <span>Supabase project URL</span>
+                <input
+                  type="text"
+                  value={urlDraft}
+                  onChange={(e) => setUrlDraft(e.target.value)}
+                  placeholder="https://xxxxxxxx.supabase.co"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </div>
+              <div className="field">
+                <span>Supabase anon public key</span>
+                <input
+                  type="text"
+                  value={keyDraft}
+                  onChange={(e) => setKeyDraft(e.target.value)}
+                  placeholder="Paste the anon/public API key"
+                  autoComplete="off"
+                  spellCheck={false}
+                />
+              </div>
+              <button className="btn-log" disabled={!urlDraft.trim() || !keyDraft.trim() || connecting} onClick={connect}>
+                {connecting ? "Connecting…" : "Connect"}
+              </button>
+              <p className="quiet-note">
+                First device you connect uploads its diary as the shared copy. Any device you connect after
+                that pulls that copy down — connect your main device first.
+              </p>
+            </>
+          )}
+        </section>
+      );
+    }
+
+    /* ---------------- styles ---------------- */
+
+    function StyleTag() {
+  return (
+    <style>{`
+.mvd {
+  --bg: #0f1115;
+  --surface: #181b21;
+  --surface-raised: #22262e;
+  --accent: #8ecae6;
+  --accent-muted: #6a9cbd;
+  --danger: #e5484d;
+  --text: #f1f3f5;
+  --text-muted: #9aa3ad;
+  --line: rgba(255,255,255,.11);
+
+  --body: 'Manrope', 'Segoe UI', system-ui, sans-serif;
+
+  background:
+    radial-gradient(ellipse 72% 28% at 50% 0%, rgba(142,202,230,.075), transparent 68%),
+    linear-gradient(180deg, #11141a 0%, var(--bg) 48%);
+  color: var(--text);
+  font-family: var(--body);
+  min-height: 100vh;
+  font-size: 15px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+.mvd *, .mvd *::before, .mvd *::after { box-sizing: border-box; }
+.mvd button { font-family: inherit; cursor: pointer; }
+.mvd :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 0; }
+.mvd img { display: block; }
+
+/* ---- top bar ---- */
+.topbar {
+  border-bottom: 1px solid var(--line);
+  background: rgba(18,21,27,.94);
+  position: sticky; top: 0; z-index: 20;
+  backdrop-filter: blur(10px);
+}
+.topbar-inner {
+  width: 100%; max-width: 1240px; margin: 0 auto;
+  padding: calc(10px + env(safe-area-inset-top)) 22px 10px;
+  display: flex; align-items: center; justify-content: space-between; gap: 30px;
+}
+.brand {
+  background: none; border: none; color: var(--accent); padding: 0;
+  display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+  font-weight: 800; font-size: 17px; letter-spacing: .12em; line-height: 1;
+}
+.logo-mark { fill: var(--accent); flex-shrink: 0; }
+.desktop-nav { display: flex; align-items: center; align-self: stretch; gap: 24px; }
+.desktop-nav button {
+  align-self: stretch; background: none; border: none; border-bottom: 2px solid transparent;
+  color: var(--text-muted); padding: 0; font-size: 10px; font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase;
+}
+.desktop-nav button:hover { color: var(--text); }
+.desktop-nav button.active { color: var(--text); border-bottom-color: var(--accent); }
+.desktop-nav .desktop-log {
+  align-self: center; background: var(--accent); color: #0f151a;
+  border: none; padding: 9px 17px;
+}
+.desktop-nav .desktop-log:hover { background: #a8d9ef; color: #0f151a; }
+.desktop-nav .desktop-log:focus-visible { outline-offset: 3px; }
+
+/* ---- bottom tab bar ---- */
+.bottombar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+  display: none; align-items: center; justify-content: space-around;
+  background: rgba(15,17,21,.96);
+  border-top: 1px solid var(--line);
+  backdrop-filter: blur(14px);
+  padding: 5px 4px calc(5px + env(safe-area-inset-bottom));
+}
+.tab-link {
+  background: none; border: none; color: var(--text-muted);
+  display: flex; align-items: center; justify-content: center;
+  padding: 13px 8px; flex: 1; max-width: 112px;
+}
+.tab-link .tab-label { font-size: 10px; letter-spacing: .1em; font-weight: 700; text-transform: uppercase; }
+.tab-link:hover { color: var(--text); }
+.tab-link.active { color: var(--accent); }
+.tab-link-log {
+  background: var(--accent); color: #0f151a; border: none;
+  width: 58px; height: 38px; border-radius: 0; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  margin: 0 8px;
+}
+.tab-link-log:hover { background: #a8d9ef; }
+.tab-link-log-label { font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+
+.btn-log {
+  background: var(--accent); color: #12181d; border: none;
+  font-weight: 700; font-size: 13px; letter-spacing: .02em;
+  padding: 10px 18px; border-radius: 0;
+}
+.btn-log:hover:not(:disabled) { background: #a8d9ef; }
+.btn-log:disabled { opacity: .45; cursor: default; }
+.btn-ghost {
+  background: none; border: 1px solid var(--line); color: var(--text-muted);
+  font-size: 13px; font-weight: 600; padding: 7px 12px; border-radius: 0;
+}
+.btn-ghost:hover:not(:disabled) { color: var(--text); border-color: var(--accent-muted); }
+.btn-ghost:disabled { opacity: .35; cursor: default; }
+.btn-ghost.danger:hover { color: #f0898d; border-color: var(--danger); }
+.btn-danger {
+  background: var(--danger); color: var(--text); border: none;
+  font-size: 13px; font-weight: 600; padding: 8px 14px; border-radius: 0;
+}
+.link { background: none; border: none; color: var(--accent); text-decoration: underline; padding: 0; font-size: inherit; }
+
+.stage { max-width: 1240px; margin: 0 auto; padding: 32px 22px 52px; }
+
+.app-loader {
+  min-height: 60vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+  font-family: var(--body); font-weight: 600; letter-spacing: .06em; color: var(--text-muted);
+}
+
+/* ---- headings ---- */
+.page-head {
+  font-family: var(--body); font-weight: 800; font-size: clamp(24px, 4vw, 34px);
+  letter-spacing: -.04em; color: var(--text);
+  margin: 0 0 22px;
+}
+.section-head {
+  font-family: var(--body); font-weight: 700; font-size: 12px;
+  letter-spacing: .14em; text-transform: uppercase; color: var(--text-muted);
+  border-bottom: 1px solid var(--line); padding-bottom: 8px; margin: 38px 0 14px;
+}
+.film-title { font-family: var(--body); font-weight: 800; font-size: 21px; margin: 0 0 10px; letter-spacing: -.01em; }
+.film-title.big { font-size: 27px; }
+.film-year { color: var(--text-muted); font-weight: 500; font-size: .68em; letter-spacing: .04em; }
+.quiet-note { color: var(--text-muted); font-size: 13px; }
+.quiet-note em, .field em { color: var(--text-muted); font-style: italic; font-size: 12px; }
+
+/* ---- films header and view tabs ---- */
+.films-head {
+  display: flex; align-items: flex-end; justify-content: space-between; gap: 24px;
+  border-bottom: 1px solid var(--line); margin-bottom: 22px;
+}
+.films-head .page-head { margin-bottom: 13px; }
+.top-tabs {
+  display: inline-flex; align-self: stretch; gap: 24px;
+}
+.top-tab {
+  background: none; border: none; color: var(--text-muted);
+  border-bottom: 2px solid transparent;
+  font-family: var(--body); font-weight: 700; font-size: 11px;
+  letter-spacing: .1em; text-transform: uppercase;
+  padding: 4px 0 11px; border-radius: 0;
+}
+.top-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+.top-tab:hover:not(.active) { color: var(--text); }
+
+/* ---- top 5 strip (Films tab) ---- */
+.top5-strip { margin-bottom: 10px; }
+.top5-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; margin: 6px 0 22px; }
+.top5-head h2 { font-size: 22px; letter-spacing: -.025em; margin: 2px 0 0; }
+.eyebrow { color: var(--accent); font-size: 10px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+.btn-ghost.active { color: var(--bg); background: var(--accent); border-color: var(--accent); }
+
+/* ---- collapsed controls (Films tab) ---- */
+.controls-collapsed { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
+.pill-select {
+  background: transparent; color: var(--text);
+  border: 1px solid var(--line); border-radius: 0;
+  padding: 7px 12px; font-size: 12.5px; font-weight: 600; max-width: 150px;
+}
+.icon-btn {
+  background: transparent; border: 1px solid var(--line); color: var(--text-muted);
+  width: 32px; height: 32px; border-radius: 0; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center; padding: 0;
+}
+.icon-btn svg { width: 16px; height: 16px; }
+.icon-btn:hover { color: var(--text); border-color: var(--accent-muted); }
+.icon-btn:disabled { opacity: .3; cursor: default; }
+.icon-btn.danger:hover { color: #f0898d; border-color: var(--danger); }
+.search-expand { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 140px; }
+.search-expand input { flex: 1; border-radius: 0; padding: 7px 14px; font-size: 13px; }
+.controls-collapsed .count { color: var(--text-muted); font-size: 11.5px; margin-left: auto; }
+
+.mvd select, .mvd input[type="search"], .mvd input[type="text"], .mvd input[type="date"], .mvd textarea {
+  background: var(--surface); color: var(--text);
+  border: 1px solid var(--line); border-radius: 0;
+  padding: 8px 10px; font-family: var(--body); font-size: 14px;
+}
+.mvd textarea { resize: vertical; width: 100%; }
+.mvd select:focus, .mvd input:focus, .mvd textarea:focus { border-color: var(--accent); outline: none; }
+
+/* ---- film cards (poster-forward, no chrome) ---- */
+.grid {
+  display: grid; gap: 20px;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+}
+.film-card {
+  background: none; border: none; padding: 0; text-align: left;
+  display: flex; flex-direction: column; gap: 7px;
+}
+.film-card-poster {
+  aspect-ratio: 2/3; border-radius: 0; overflow: hidden;
+  background: var(--surface-raised);
+  outline: 1px solid rgba(255,255,255,.07); outline-offset: -1px;
+  transition: transform .16s ease, outline-color .16s ease;
+}
+.film-card-poster img { width: 100%; height: 100%; object-fit: cover; }
+.film-card:hover .film-card-poster, .film-card:focus-visible .film-card-poster {
+  transform: translateY(-3px); outline-color: var(--accent);
+}
+@media (prefers-reduced-motion: reduce) {
+  .film-card-poster, .film-card:hover .film-card-poster { transition: none; transform: none; }
+}
+.film-card-title {
+  font-family: var(--body); font-weight: 650; font-size: 13px; letter-spacing: -.01em;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  color: var(--text-muted);
+}
+.film-card:hover .film-card-title { color: var(--text); }
+.film-card-meta { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+.film-card-date { color: var(--text-muted); font-size: 10.5px; }
+
+.poster-blank {
+  width: 100%; height: 100%; min-height: 120px;
+  display: grid; place-items: center; text-align: center;
+  background: var(--surface-raised); color: var(--text-muted);
+  font-family: var(--body); font-weight: 600; padding: 10px;
+}
+.poster-blank.tall { aspect-ratio: 2/3; }
+
+/* ---- stars ---- */
+.stars, .star-input { display: inline-flex; align-items: center; line-height: 1; }
+.star-wrap { position: relative; display: inline-block; }
+.star-empty { color: rgba(244,242,238,.16); }
+.star-fill {
+  position: absolute; left: 0; top: 0; overflow: hidden; white-space: nowrap;
+  color: var(--accent); pointer-events: none;
+}
+.star-input { gap: 0; cursor: pointer; border-radius: 0; padding: 2px; }
+.half-hit { position: absolute; top: 0; height: 100%; width: 50%; opacity: 0; border: none; background: none; padding: 0; }
+.half-hit.left { left: 0; }
+.half-hit.right { right: 0; }
+.star-num { margin-left: 8px; font-size: 13px; color: var(--text-muted); min-width: 26px; }
+
+/* ---- empty state ---- */
+.empty-house { text-align: left; max-width: 480px; padding: 90px 0; }
+.empty-mark { color: var(--accent); font-size: 12px; font-weight: 800; letter-spacing: .14em; margin-bottom: 14px; }
+.empty-house h2 { font-family: var(--body); font-weight: 800; letter-spacing: -.01em; }
+.empty-house p { color: var(--text-muted); margin-bottom: 22px; }
+
+/* ---- modal ---- */
+.overlay {
+  position: fixed; inset: 0; background: rgba(8,9,12,.78); z-index: 50;
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 6vh 16px 16px; overflow-y: auto;
+}
+.modal {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 0;
+  width: 100%; max-width: 640px; padding: 20px 22px 24px;
+  box-shadow: 0 20px 60px rgba(0,0,0,.5);
+}
+.modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
+.modal-head h2 { font-family: var(--body); font-weight: 800; font-size: 17px; margin: 0; color: var(--text); }
+.search-big { width: 100%; font-size: 16px; padding: 12px 14px; margin-bottom: 12px; }
+.results { list-style: none; margin: 0; padding: 0; max-height: 46vh; overflow-y: auto; }
+.result {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  background: none; border: none; border-bottom: 1px solid var(--line);
+  padding: 8px 6px; text-align: left; color: var(--text);
+}
+.result:hover { background: var(--surface-raised); }
+.result img, .thumb-blank { width: 38px; height: 57px; object-fit: cover; border-radius: 0; background: var(--surface-raised); flex-shrink: 0; }
+.result-title { font-size: 14.5px; font-weight: 500; }
+.result-year { color: var(--text-muted); font-size: 12.5px; }
+.result-flag { margin-left: auto; font-size: 11px; font-weight: 600; color: var(--accent); letter-spacing: .04em; text-transform: uppercase; }
+
+.notice {
+  background: var(--surface-raised); border: 1px solid var(--line);
+  border-radius: 0; padding: 10px 12px; font-size: 13.5px; margin: 10px 0;
+}
+.notice.error { border-color: var(--danger); }
+.notice.good { border-color: var(--accent); color: var(--accent); }
+
+/* ---- log form ---- */
+.log-form { display: flex; gap: 20px; flex-wrap: wrap; }
+.log-form-poster { width: 160px; flex-shrink: 0; display: flex; flex-direction: column; gap: 8px; }
+.log-form-poster img { width: 100%; border-radius: 0; }
+.poster-change-btn { width: 100%; }
+.log-form-fields { flex: 1; min-width: 240px; display: flex; flex-direction: column; gap: 14px; }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field > span { font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.row-end { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
+.row-btns { display: flex; gap: 6px; }
+
+/* ---- detail ---- */
+.back { margin-bottom: 16px; }
+.detail-main { display: flex; gap: 34px; flex-wrap: wrap; }
+.detail-poster { width: 280px; flex-shrink: 0; }
+.detail-poster img { width: 100%; border-radius: 0; }
+.detail-info { flex: 1; min-width: 280px; display: flex; flex-direction: column; gap: 18px; }
+.detail-facts { display: flex; gap: 16px; color: var(--text-muted); font-size: 13px; flex-wrap: wrap; }
+.film-facts { display: flex; flex-direction: column; gap: 10px; margin: 2px 0 4px; }
+.film-plot { color: var(--text); font-size: 14px; line-height: 1.55; max-width: 62ch; margin: 0; }
+.film-credit { font-size: 13.5px; color: var(--text); margin: 0; }
+.film-credit-label {
+  font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
+  color: var(--text-muted); margin-right: 6px;
+}
+.film-cast { display: flex; flex-direction: column; gap: 6px; }
+.film-cast-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.cast-chip {
+  background: var(--surface); border: 1px solid var(--line); border-radius: 0;
+  padding: 4px 11px; font-size: 12px; color: var(--text);
+}
+.review-text { white-space: pre-wrap; margin: 0 0 8px; max-width: 60ch; }
+.danger-zone { margin-top: 8px; padding-top: 14px; border-top: 1px solid var(--line); }
+
+.poster-picker { margin-top: 30px; }
+.poster-grid { display: grid; gap: 12px; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); }
+.poster-option {
+  background: none; border: 2px solid transparent; border-radius: 0;
+  padding: 0; position: relative; overflow: hidden;
+}
+.poster-option img { width: 100%; border-radius: 0; }
+.poster-option:hover { border-color: var(--accent-muted); }
+.poster-option.active { border-color: var(--accent); }
+.poster-lang {
+  position: absolute; bottom: 4px; right: 4px;
+  background: rgba(18,19,23,.85); color: var(--text);
+  font-size: 10px; font-weight: 600; letter-spacing: .04em; padding: 2px 6px; border-radius: 0;
+}
+.poster-option.active .poster-lang { color: var(--accent); }
+
+/* ---- lists ---- */
+.list-create { margin-bottom: 26px; }
+.list-create input { flex: 1; min-width: 220px; }
+.list-cards { display: flex; flex-direction: column; gap: 12px; }
+.list-card {
+  display: flex; align-items: center; gap: 12px;
+  background: transparent; border: none; border-bottom: 1px solid var(--line); border-radius: 0;
+  padding: 12px 2px 16px;
+}
+.list-card-open { display: flex; align-items: center; gap: 16px; flex: 1; background: none; border: none; color: var(--text); text-align: left; padding: 0; }
+.list-covers { display: flex; }
+.list-covers img, .list-covers .thumb-blank { width: 34px; height: 51px; border-radius: 0; margin-right: -10px; border: 1px solid var(--bg); }
+.list-name { font-family: var(--body); font-weight: 700; font-size: 16px; }
+.list-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.list-head-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.list-rows { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.list-row {
+  display: flex; align-items: center; gap: 12px;
+  background: transparent; border: none; border-bottom: 1px solid var(--line); border-radius: 0; padding: 8px 2px 12px;
+}
+.list-row-num { font-family: var(--body); font-weight: 700; color: var(--accent); width: 22px; text-align: right; }
+.list-row-main { display: flex; align-items: center; gap: 12px; flex: 1; background: none; border: none; color: var(--text); text-align: left; padding: 0; }
+.list-row-main:disabled { cursor: default; opacity: .7; }
+.list-row-main img { width: 34px; height: 51px; object-fit: cover; border-radius: 0; }
+
+/* ---- top 5 ---- */
+.marquee-board {
+  list-style: none; margin: 0; padding: 0;
+  display: grid; gap: 20px;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+.marquee-slot { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.marquee-rank {
+  color: var(--accent); font-size: 11px; font-weight: 800; letter-spacing: .12em;
+  border-top: 2px solid var(--accent); padding-top: 6px;
+}
+.marquee-poster { background: none; border: none; border-radius: 0; padding: 0; width: 100%; overflow: visible; }
+.marquee-poster img {
+  width: 100%; aspect-ratio: 2/3; object-fit: cover; border-radius: 0;
+  outline: 1px solid rgba(255,255,255,.07); outline-offset: -1px;
+  transition: transform .16s ease, outline-color .16s ease;
+}
+.marquee-poster:hover img, .marquee-poster:focus-visible img { transform: translateY(-3px); outline-color: var(--accent); }
+.marquee-title {
+  font-family: var(--body); font-weight: 600; font-size: 13px; text-align: left;
+  line-height: 1.3; min-height: 2.6em;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.marquee-empty {
+  width: 100%; aspect-ratio: 2/3;
+  background: transparent; color: var(--text-muted);
+  border: 1px solid var(--line); border-radius: 0;
+  font-family: var(--body); font-weight: 600; font-size: 12px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
+}
+.marquee-empty svg { width: 20px; height: 20px; }
+.marquee-empty:hover { color: var(--accent); border-color: var(--accent-muted); }
+.rank-controls { display: grid; grid-template-columns: 32px 32px 1fr 32px; gap: 5px; }
+.rank-controls .btn-ghost { padding: 6px 8px; font-size: 11px; }
+
+/* ---- stats ---- */
+.stat-cards { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.stat-card {
+  background: transparent; border: none; border-top: 2px solid var(--line); border-radius: 0;
+  padding: 16px 0 18px; text-align: left;
+}
+.stat-card:first-child { border-top-color: var(--accent); }
+.stat-num { font-family: var(--body); font-weight: 800; font-size: 34px; color: var(--text); line-height: 1.1; letter-spacing: -.04em; }
+.stat-num.small { font-size: 20px; padding-top: 8px; }
+.stat-label { color: var(--text-muted); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; margin-top: 6px; }
+.bar-chart { display: flex; align-items: flex-end; gap: 8px; padding: 10px 4px 0; overflow-x: auto; }
+.bar-col { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 34px; flex: 1; }
+.bar { width: 100%; max-width: 40px; background: var(--accent); border-radius: 0; min-height: 2px; }
+.bar-val { font-size: 11px; color: var(--text-muted); height: 14px; }
+.bar-label { font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); }
+.rating-histogram {
+  display: flex; align-items: flex-end; gap: 6px;
+  width: 100%; max-width: 680px; padding-top: 8px;
+}
+.rating-column { display: flex; flex: 1; min-width: 24px; flex-direction: column; align-items: center; gap: 5px; }
+.rating-count { color: var(--text-muted); font-size: 10px; height: 15px; }
+.rating-track {
+  width: 100%; height: 120px; display: flex; align-items: flex-end;
+  background: var(--surface); border-bottom: 1px solid var(--line);
+}
+.rating-bar { width: 100%; background: var(--accent-muted); }
+.rating-column:hover .rating-bar { background: var(--accent); }
+.rating-label { color: var(--text-muted); font-size: 10px; font-weight: 600; }
+
+/* ---- settings ---- */
+.settings { max-width: 560px; }
+.settings input { width: 100%; }
+
+/* ---- toast ---- */
+.toast {
+  position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+  background: var(--surface-raised); color: var(--text);
+  border: 1px solid var(--accent); border-radius: 0;
+  padding: 10px 18px; font-size: 14px; z-index: 60;
+  box-shadow: 0 8px 30px rgba(0,0,0,.45);
+}
+
+/* ---- responsive ---- */
+@media (max-width: 640px) {
+  .topbar-inner { justify-content: center; padding: calc(11px + env(safe-area-inset-top)) 14px 11px; }
+  .brand { font-size: 18px; }
+  .desktop-nav { display: none; }
+  .bottombar { display: flex; }
+  .stage { padding: 16px 14px calc(84px + env(safe-area-inset-bottom)); }
+  .films-head { align-items: flex-end; gap: 16px; }
+  .films-head .page-head { font-size: 26px; }
+  .top-tabs { gap: 16px; }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; }
+  .detail-poster { width: 100%; max-width: 300px; }
+  .log-form-poster { width: 110px; }
+  .marquee-board { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); }
+  .rank-controls { grid-template-columns: 1fr 1fr; }
+  .rank-controls .btn-ghost { grid-column: 1 / -1; order: -1; }
+}
+    `}</style>
+  );
+}
+
+    const root = ReactDOM.createRoot(document.getElementById("root"));
+    root.render(<MovieDiary />);
+
+  </script>
+</body>
+
+</html>
