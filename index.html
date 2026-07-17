@@ -116,70 +116,56 @@
       }
     }
 
-    /* ---------------- cloud sync (optional) ----------------
-       If a Supabase project is connected, diary data (entries, lists, top5)
-       also lives in one small Postgres table, so it's the same on every
-       device. Local `localStorage` always stays as a fast, offline-safe
-       cache — cloud calls are additive and fail silently to local-only if
-       the network is down or nothing's configured yet. TMDB key and the
-       Supabase credentials themselves are per-device only; they're what
-       you use to reach the shared data, so they aren't part of it. */
+    /* ---------------- authenticated cloud data ----------------
+       Supabase Auth identifies each member. Diary entries are normalized
+       into individual rows for the shared feed, while lists, Top 5, and the
+       list-only movie cache live in a private per-user state row. The old
+       kv_store name remains only for the owner's one-time legacy import. */
 
     const SYNC_TABLE = "kv_store";
-    let _syncClient = null;
+    const SUPABASE_URL = "https://wfubbacbkqdxncksjbnm.supabase.co";
+    const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_nVTWZoxsaer7Uw3ow1NuKQ_ZKc_smL-";
+    const AUTH_URL_TYPE = new URLSearchParams(window.location.hash.replace(/^#/, "")).get("type");
+    const APP_CLIENT = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+    });
 
-    function getSyncClient(url, key) {
-      if (!url || !key || !window.supabase) return null;
-      if (!_syncClient || _syncClient.__url !== url || _syncClient.__key !== key) {
-        try {
-          _syncClient = window.supabase.createClient(url, key);
-          _syncClient.__url = url;
-          _syncClient.__key = key;
-        } catch (e) {
-          return null;
-        }
-      }
-      return _syncClient;
+    function userStoreKey(key, userId) {
+      return `${key}:${userId}`;
     }
 
-    async function syncPullAll(url, key) {
-      const client = getSyncClient(url, key);
-      if (!client) return null;
-      try {
-        const { data, error } = await client.from(SYNC_TABLE).select("key, value");
-        if (error) throw error;
-        const out = {};
-        (data || []).forEach((row) => { out[row.key] = row.value; });
-        return out;
-      } catch (e) {
-        return null;
-      }
+    function rowToEntry(row) {
+      return {
+        id: String(row.tmdb_id),
+        title: row.title,
+        releaseDate: row.release_date || "",
+        posterPath: row.poster_path || null,
+        chosenPoster: row.chosen_poster || null,
+        rating: Number(row.rating),
+        review: row.review || "",
+        watchedDate: row.watched_date,
+        genres: row.genres || [],
+        runtime: row.runtime || null,
+        loggedAt: new Date(row.logged_at).getTime(),
+      };
     }
 
-    async function syncPush(url, key, storeKey, value) {
-      const client = getSyncClient(url, key);
-      if (!client) return false;
-      try {
-        const { error } = await client
-          .from(SYNC_TABLE)
-          .upsert({ key: storeKey, value, updated_at: new Date().toISOString() }, { onConflict: "key" });
-        if (error) throw error;
-        return true;
-      } catch (e) {
-        return false;
-      }
-    }
-
-    async function syncTest(url, key) {
-      const client = getSyncClient(url, key);
-      if (!client) return "Enter both fields first.";
-      try {
-        const { error } = await client.from(SYNC_TABLE).select("key").limit(1);
-        if (error) throw error;
-        return null; // no error = success
-      } catch (e) {
-        return "Couldn't reach that Supabase project. Check the URL/key, and make sure the kv_store table exists (see README).";
-      }
+    function entryToRow(entry, userId) {
+      return {
+        user_id: userId,
+        tmdb_id: Number(entry.id),
+        title: entry.title,
+        release_date: entry.releaseDate || "",
+        poster_path: entry.posterPath || null,
+        chosen_poster: entry.chosenPoster || null,
+        rating: entry.rating,
+        review: entry.review || "",
+        watched_date: entry.watchedDate,
+        genres: entry.genres || [],
+        runtime: entry.runtime || null,
+        logged_at: new Date(entry.loggedAt || Date.now()).toISOString(),
+        updated_at: new Date().toISOString(),
+      };
     }
 
     /* ---------------- TMDB helpers ---------------- */
@@ -340,11 +326,13 @@ function IconPlus() {
 }
 
     const NAV_ITEMS = [
+      { name: "feed", label: "Feed" },
       { name: "diary", label: "Films", Icon: IconFilms },
       { name: "lists", label: "Lists", Icon: IconLists },
       { name: "stats", label: "Stats", Icon: IconStats },
-      { name: "settings", label: "Settings", Icon: IconSettings },
+      { name: "settings", label: "Profile", Icon: IconSettings },
     ];
+    const MOBILE_NAV_ITEMS = NAV_ITEMS.filter((item) => ["feed", "diary", "lists", "settings"].includes(item.name));
 
     /* ---------------- stars ---------------- */
 
@@ -503,104 +491,137 @@ function IconPlus() {
 
     /* ---------------- main app ---------------- */
 
-    function MovieDiary() {
+    function MovieDiary({ client, user, onSignOut }) {
   const [loaded, setLoaded] = useState(false);
+  const [loadError, setLoadError] = useState(null);
   const [apiKey, setApiKey] = useState("");
-  const [syncUrl, setSyncUrl] = useState("");
-  const [syncKey, setSyncKey] = useState("");
-  const [syncStatus, setSyncStatus] = useState("off"); // 'off' | 'synced' | 'offline'
-  const [entries, setEntries] = useState({}); // tmdbId -> entry
-  const [lists, setLists] = useState([]); // {id, name, movieIds:[]}
-  const [movieCache, setMovieCache] = useState({}); // tmdbId -> {title, posterPath, releaseDate}, for list-only movies
+  const [entries, setEntries] = useState({});
+  const [lists, setLists] = useState([]);
+  const [movieCache, setMovieCache] = useState({});
   const [top5, setTop5] = useState([null, null, null, null, null]);
-  const [view, setView] = useState({ name: "diary" });
+  const [profile, setProfile] = useState(null);
+  const [view, setView] = useState({ name: "feed" });
+  const [feedVersion, setFeedVersion] = useState(0);
   const [logOpen, setLogOpen] = useState(false);
   const [toast, setToast] = useState(null);
   const toastTimer = useRef(null);
 
   const tmdb = useMemo(() => buildTmdb(apiKey), [apiKey]);
 
-  /* load everything once, pulling from the cloud first if connected */
-  useEffect(() => {
-    (async () => {
-      const [settings, e, l, t, mc] = await Promise.all([
-        loadKey(STORE.settings, {}),
-        loadKey(STORE.entries, {}),
-        loadKey(STORE.lists, []),
-        loadKey(STORE.top5, [null, null, null, null, null]),
-        loadKey(STORE.movieCache, {}),
-      ]);
-      setApiKey(settings.apiKey || "");
-      setSyncUrl(settings.supabaseUrl || "");
-      setSyncKey(settings.supabaseKey || "");
-
-      let finalEntries = e;
-      let finalLists = l;
-      let finalTop5 = Array.isArray(t) && t.length === 5 ? t : [null, null, null, null, null];
-      let finalMovieCache = mc;
-
-      if (settings.supabaseUrl && settings.supabaseKey) {
-        const cloud = await syncPullAll(settings.supabaseUrl, settings.supabaseKey);
-        if (cloud) {
-          if (cloud[STORE.entries] !== undefined) finalEntries = cloud[STORE.entries];
-          if (cloud[STORE.lists] !== undefined) finalLists = cloud[STORE.lists];
-          if (Array.isArray(cloud[STORE.top5]) && cloud[STORE.top5].length === 5) finalTop5 = cloud[STORE.top5];
-          if (cloud[STORE.movieCache] !== undefined) finalMovieCache = cloud[STORE.movieCache];
-          setSyncStatus("synced");
-          // keep the local cache in step with what the cloud just gave us
-          saveKey(STORE.entries, finalEntries);
-          saveKey(STORE.lists, finalLists);
-          saveKey(STORE.top5, finalTop5);
-          saveKey(STORE.movieCache, finalMovieCache);
-        } else {
-          setSyncStatus("offline");
-        }
-      }
-
-      setEntries(finalEntries);
-      setLists(finalLists);
-      setTop5(finalTop5);
-      setMovieCache(finalMovieCache);
-      setLoaded(true);
-    })();
-  }, []);
-
   const notify = (msg) => {
     setToast(msg);
     window.clearTimeout(toastTimer.current);
-    toastTimer.current = window.setTimeout(() => setToast(null), 2600);
+    toastTimer.current = window.setTimeout(() => setToast(null), 3000);
   };
 
-  const pushToCloud = (storeKey, value) => {
-    if (!syncUrl || !syncKey) return;
-    syncPush(syncUrl, syncKey, storeKey, value).then((ok) => setSyncStatus(ok ? "synced" : "offline"));
-  };
+  const loadAccountData = useCallback(async () => {
+    setLoaded(false);
+    setLoadError(null);
+    const settings = await loadKey(STORE.settings, {});
+    setApiKey(settings.apiKey || "");
 
-  /* persistence wrappers */
+    const [entryResult, stateResult, profileResult] = await Promise.all([
+      client.from("diary_entries").select("*").eq("user_id", user.id).order("watched_date", { ascending: false }),
+      client.from("user_state").select("*").eq("user_id", user.id).single(),
+      client.from("profiles").select("*").eq("id", user.id).single(),
+    ]);
+
+    let nextEntries = {};
+    let nextLists = [];
+    let nextTop5 = [null, null, null, null, null];
+    let nextMovieCache = {};
+
+    if (!entryResult.error) {
+      (entryResult.data || []).forEach((row) => {
+        const entry = rowToEntry(row);
+        nextEntries[entry.id] = entry;
+      });
+      saveKey(userStoreKey(STORE.entries, user.id), nextEntries);
+    } else {
+      nextEntries = await loadKey(userStoreKey(STORE.entries, user.id), {});
+    }
+
+    if (!stateResult.error && stateResult.data) {
+      nextLists = stateResult.data.lists || [];
+      nextTop5 = Array.isArray(stateResult.data.top5) && stateResult.data.top5.length === 5
+        ? stateResult.data.top5
+        : nextTop5;
+      nextMovieCache = stateResult.data.movie_cache || {};
+      saveKey(userStoreKey(STORE.lists, user.id), nextLists);
+      saveKey(userStoreKey(STORE.top5, user.id), nextTop5);
+      saveKey(userStoreKey(STORE.movieCache, user.id), nextMovieCache);
+    } else {
+      nextLists = await loadKey(userStoreKey(STORE.lists, user.id), []);
+      nextTop5 = await loadKey(userStoreKey(STORE.top5, user.id), nextTop5);
+      nextMovieCache = await loadKey(userStoreKey(STORE.movieCache, user.id), {});
+    }
+
+    setEntries(nextEntries);
+    setLists(nextLists);
+    setTop5(nextTop5);
+    setMovieCache(nextMovieCache);
+    setProfile(profileResult.data || null);
+    if (entryResult.error || stateResult.error || profileResult.error) {
+      setLoadError("Some cloud data couldn't be loaded. Cached data is shown where available.");
+    }
+    setLoaded(true);
+  }, [client, user.id]);
+
+  useEffect(() => { loadAccountData(); }, [loadAccountData]);
+
   const persistEntries = async (next) => {
+    const deletedIds = Object.keys(entries).filter((id) => !next[id]);
     setEntries(next);
-    if (!(await saveKey(STORE.entries, next))) notify("Couldn't save — try again.");
-    pushToCloud(STORE.entries, next);
+    saveKey(userStoreKey(STORE.entries, user.id), next);
+
+    let error = null;
+    if (deletedIds.length > 0) {
+      const result = await client
+        .from("diary_entries")
+        .delete()
+        .eq("user_id", user.id)
+        .in("tmdb_id", deletedIds.map(Number));
+      error = result.error;
+    }
+    if (!error && Object.keys(next).length > 0) {
+      const result = await client
+        .from("diary_entries")
+        .upsert(Object.values(next).map((entry) => entryToRow(entry, user.id)), { onConflict: "user_id,tmdb_id" });
+      error = result.error;
+    }
+    if (error) notify("Cloud save failed. Your local copy is still intact.");
   };
+
+  const persistUserState = async (patch) => {
+    const payload = {
+      user_id: user.id,
+      lists: patch.lists !== undefined ? patch.lists : lists,
+      top5: patch.top5 !== undefined ? patch.top5 : top5,
+      movie_cache: patch.movieCache !== undefined ? patch.movieCache : movieCache,
+      updated_at: new Date().toISOString(),
+    };
+    const { error } = await client.from("user_state").upsert(payload, { onConflict: "user_id" });
+    if (error) notify("Cloud save failed. Your local copy is still intact.");
+  };
+
   const persistLists = async (next) => {
     setLists(next);
-    if (!(await saveKey(STORE.lists, next))) notify("Couldn't save — try again.");
-    pushToCloud(STORE.lists, next);
+    saveKey(userStoreKey(STORE.lists, user.id), next);
+    await persistUserState({ lists: next });
   };
   const persistTop5 = async (next) => {
     setTop5(next);
-    if (!(await saveKey(STORE.top5, next))) notify("Couldn't save — try again.");
-    pushToCloud(STORE.top5, next);
+    saveKey(userStoreKey(STORE.top5, user.id), next);
+    await persistUserState({ top5: next });
   };
   const persistMovieCache = async (next) => {
     setMovieCache(next);
-    if (!(await saveKey(STORE.movieCache, next))) notify("Couldn't save — try again.");
-    pushToCloud(STORE.movieCache, next);
+    saveKey(userStoreKey(STORE.movieCache, user.id), next);
+    await persistUserState({ movieCache: next });
   };
   const cacheMovie = (movie) => {
-    // movie: a TMDB search-result-shaped object
     const id = String(movie.id);
-    if (entries[id] || movieCache[id]) return; // already have richer or equal info
+    if (entries[id] || movieCache[id]) return;
     persistMovieCache({
       ...movieCache,
       [id]: { title: movie.title, posterPath: movie.poster_path || null, releaseDate: movie.release_date || "" },
@@ -613,77 +634,67 @@ function IconPlus() {
     else notify("Couldn't save the key — try again.");
   };
 
-  /* cloud sync connect / disconnect */
-  const connectSync = async (url, key) => {
-    const cloud = await syncPullAll(url, key);
-    if (cloud === null) {
-      notify("Couldn't reach that Supabase project. Check the URL/key and try again.");
-      return false;
-    }
-    const cloudHasData =
-      cloud[STORE.entries] !== undefined ||
-      cloud[STORE.lists] !== undefined ||
-      cloud[STORE.top5] !== undefined ||
-      cloud[STORE.movieCache] !== undefined;
-
-    if (cloudHasData) {
-      // another device already seeded this project — pull it down
-      const nextEntries = cloud[STORE.entries] !== undefined ? cloud[STORE.entries] : {};
-      const nextLists = cloud[STORE.lists] !== undefined ? cloud[STORE.lists] : [];
-      const nextTop5 =
-        Array.isArray(cloud[STORE.top5]) && cloud[STORE.top5].length === 5
-          ? cloud[STORE.top5]
-          : [null, null, null, null, null];
-      const nextMovieCache = cloud[STORE.movieCache] !== undefined ? cloud[STORE.movieCache] : {};
-      await Promise.all([
-        saveKey(STORE.entries, nextEntries),
-        saveKey(STORE.lists, nextLists),
-        saveKey(STORE.top5, nextTop5),
-        saveKey(STORE.movieCache, nextMovieCache),
-      ]);
-      setEntries(nextEntries);
-      setLists(nextLists);
-      setTop5(nextTop5);
-      setMovieCache(nextMovieCache);
-      notify("Connected — pulled your diary from the cloud.");
-    } else {
-      // first device to connect this project — seed it with what's already here
-      await Promise.all([
-        syncPush(url, key, STORE.entries, entries),
-        syncPush(url, key, STORE.lists, lists),
-        syncPush(url, key, STORE.top5, top5),
-        syncPush(url, key, STORE.movieCache, movieCache),
-      ]);
-      notify("Connected — this device's diary is now the shared copy.");
-    }
-
-    const settings = await loadKey(STORE.settings, {});
-    await saveKey(STORE.settings, { ...settings, supabaseUrl: url, supabaseKey: key });
-    setSyncUrl(url);
-    setSyncKey(key);
-    setSyncStatus("synced");
-    return true;
+  const saveProfile = async ({ username, displayName }) => {
+    const cleanUsername = username.trim().toLowerCase().replace(/[^a-z0-9_]/g, "");
+    if (cleanUsername.length < 3) return "Username must be at least 3 letters, numbers, or underscores.";
+    const { data, error } = await client
+      .from("profiles")
+      .update({ username: cleanUsername, display_name: displayName.trim() || cleanUsername })
+      .eq("id", user.id)
+      .select()
+      .single();
+    if (error) return error.code === "23505" ? "That username is already taken." : error.message;
+    setProfile(data);
+    notify("Profile updated.");
+    return null;
   };
 
-  const disconnectSync = async () => {
-    const settings = await loadKey(STORE.settings, {});
-    await saveKey(STORE.settings, { ...settings, supabaseUrl: "", supabaseKey: "" });
-    setSyncUrl("");
-    setSyncKey("");
-    setSyncStatus("off");
-    notify("Disconnected — this device keeps its own local copy from here.");
+  const importLegacyDiary = async () => {
+    const local = {
+      [STORE.entries]: await loadKey(STORE.entries, {}),
+      [STORE.lists]: await loadKey(STORE.lists, []),
+      [STORE.top5]: await loadKey(STORE.top5, [null, null, null, null, null]),
+      [STORE.movieCache]: await loadKey(STORE.movieCache, {}),
+    };
+    const legacyResult = await client.from(SYNC_TABLE).select("key, value");
+    if (!legacyResult.error) {
+      (legacyResult.data || []).forEach((row) => { local[row.key] = row.value; });
+    }
+    const legacyEntries = local[STORE.entries] || {};
+    const rows = Object.values(legacyEntries)
+      .filter((entry) => entry && entry.id && entry.rating && entry.watchedDate)
+      .map((entry) => entryToRow(entry, user.id));
+    if (rows.length === 0) return "No legacy diary entries were found.";
+
+    const { error: entryError } = await client
+      .from("diary_entries")
+      .upsert(rows, { onConflict: "user_id,tmdb_id" });
+    if (entryError) return entryError.message;
+    const { error: stateError } = await client.from("user_state").upsert({
+      user_id: user.id,
+      lists: local[STORE.lists] || [],
+      top5: local[STORE.top5] || [null, null, null, null, null],
+      movie_cache: local[STORE.movieCache] || {},
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "user_id" });
+    if (stateError) return stateError.message;
+    await loadAccountData();
+    notify(`Imported ${rows.length} films into your account.`);
+    return null;
   };
 
   const entryList = useMemo(() => Object.values(entries), [entries]);
 
   const addEntry = async (entry) => {
     await persistEntries({ ...entries, [entry.id]: entry });
+    setFeedVersion((version) => version + 1);
     notify(`Logged “${entry.title}.”`);
   };
 
   const updateEntry = async (id, patch) => {
     if (!entries[id]) return;
     await persistEntries({ ...entries, [id]: { ...entries[id], ...patch } });
+    setFeedVersion((version) => version + 1);
   };
 
   const deleteEntry = async (id) => {
@@ -692,6 +703,7 @@ function IconPlus() {
     await persistEntries(next);
     await persistLists(lists.map((l) => ({ ...l, movieIds: l.movieIds.filter((m) => m !== id) })));
     await persistTop5(top5.map((m) => (m === id ? null : m)));
+    setFeedVersion((version) => version + 1);
     setView({ name: "diary" });
     notify("Entry removed.");
   };
@@ -715,7 +727,7 @@ function IconPlus() {
           <StyleTag />
           <header className="topbar">
             <div className="topbar-inner">
-              <button className="brand" onClick={() => setView({ name: "diary" })} aria-label="Marquee home">
+              <button className="brand" onClick={() => setView({ name: "feed" })} aria-label="Marquee home">
                 <LogoMark size={26} />
                 <span>MARQUEE</span>
               </button>
@@ -736,6 +748,8 @@ function IconPlus() {
           </header>
 
           <main className="stage">
+            {loadError && <div className="notice error">{loadError}</div>}
+            {view.name === "feed" && <FeedPage key={feedVersion} client={client} currentUserId={user.id} />}
             {view.name === "diary" && (
               <FilmsPage
                 entries={entries}
@@ -796,17 +810,18 @@ function IconPlus() {
                 apiKey={apiKey}
                 onSave={persistKey}
                 tmdb={tmdb}
-                syncUrl={syncUrl}
-                syncKey={syncKey}
-                syncStatus={syncStatus}
-                onConnectSync={connectSync}
-                onDisconnectSync={disconnectSync}
+                profile={profile}
+                email={user.email}
+                onSaveProfile={saveProfile}
+                onImportLegacy={importLegacyDiary}
+                onSignOut={onSignOut}
+                onOpenStats={() => setView({ name: "stats" })}
               />
             )}
           </main>
 
           <nav className="bottombar" aria-label="Main">
-            {NAV_ITEMS.slice(0, 2).map(({ name, label }) => (
+            {MOBILE_NAV_ITEMS.slice(0, 2).map(({ name, label }) => (
               <button
                 key={name}
                 className={"tab-link" + (activeNav === name ? " active" : "")}
@@ -819,7 +834,7 @@ function IconPlus() {
             <button className="tab-link-log" onClick={() => setLogOpen(true)} aria-label="Log a movie">
               <span className="tab-link-log-label">Log</span>
             </button>
-            {NAV_ITEMS.slice(2).map(({ name, label }) => (
+            {MOBILE_NAV_ITEMS.slice(2).map(({ name, label }) => (
               <button
                 key={name}
                 className={"tab-link" + (activeNav === name ? " active" : "")}
@@ -1103,6 +1118,92 @@ function IconPlus() {
               {shown.length === 0 && <p className="quiet-note">No films match those filters.</p>}
             </>
           )}
+        </section>
+      );
+    }
+
+    /* ---------------- friends activity feed ---------------- */
+
+    function FeedPage({ client, currentUserId }) {
+      const [items, setItems] = useState([]);
+      const [loading, setLoading] = useState(true);
+      const [error, setError] = useState(null);
+
+      const loadFeed = useCallback(async () => {
+        setLoading(true);
+        setError(null);
+        const { data, error: feedError } = await client
+          .from("diary_entries")
+          .select(`
+            *,
+            profiles!diary_entries_user_id_fkey (
+              username,
+              display_name,
+              avatar_url
+            )
+          `)
+          .order("logged_at", { ascending: false })
+          .limit(60);
+        if (feedError) setError(feedError.message);
+        else setItems(data || []);
+        setLoading(false);
+      }, [client]);
+
+      useEffect(() => { loadFeed(); }, [loadFeed]);
+
+      return (
+        <section>
+          <div className="feed-head">
+            <div>
+              <div className="eyebrow">Friends activity</div>
+              <h1 className="page-head">Feed</h1>
+            </div>
+            <button className="btn-ghost" onClick={loadFeed} disabled={loading}>
+              {loading ? "Refreshing…" : "Refresh"}
+            </button>
+          </div>
+
+          {error && <div className="notice error">Couldn't load the feed: {error}</div>}
+          {!loading && !error && items.length === 0 && (
+            <div className="empty-house feed-empty">
+              <div className="empty-mark">01</div>
+              <h2>The feed is quiet</h2>
+              <p>Activity will appear here when you or a friend logs a film.</p>
+            </div>
+          )}
+
+          <div className="feed-list">
+            {items.map((item) => {
+              const person = item.profiles || {};
+              const poster = item.chosen_poster || item.poster_path;
+              return (
+                <article className="feed-entry" key={item.id}>
+                  <div className="feed-person">
+                    <div className="avatar" aria-hidden="true">
+                      {(person.display_name || person.username || "?").slice(0, 1).toUpperCase()}
+                    </div>
+                    <div>
+                      <div className="feed-name">
+                        {person.display_name || person.username || "Marquee user"}
+                        {item.user_id === currentUserId && <span className="you-tag">You</span>}
+                      </div>
+                      <div className="feed-action">logged a film · {fmtDate(item.watched_date)}</div>
+                    </div>
+                  </div>
+                  <div className="feed-content">
+                    <div className="feed-poster">
+                      {poster ? <img src={IMG + "w185" + poster} alt="" loading="lazy" /> : <div className="poster-blank" />}
+                    </div>
+                    <div className="feed-copy">
+                      <h2>{item.title} <span>{item.release_date ? item.release_date.slice(0, 4) : ""}</span></h2>
+                      <StarDisplay value={Number(item.rating)} size={15} />
+                      {item.review ? <p>{item.review}</p> : <p className="quiet-note">No written review.</p>}
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
         </section>
       );
     }
@@ -1828,14 +1929,20 @@ function IconPlus() {
 
     /* ---------------- settings ---------------- */
 
-    function SettingsPage({ apiKey, onSave, tmdb, syncUrl, syncKey, syncStatus, onConnectSync, onDisconnectSync }) {
+    function SettingsPage({ apiKey, onSave, tmdb, profile, email, onSaveProfile, onImportLegacy, onSignOut, onOpenStats }) {
       const [draft, setDraft] = useState(apiKey);
-      const [testState, setTestState] = useState(null); // null | 'testing' | 'ok' | error string
+      const [testState, setTestState] = useState(null);
+      const [username, setUsername] = useState(profile ? profile.username : "");
+      const [displayName, setDisplayName] = useState(profile ? profile.display_name : "");
+      const [profileError, setProfileError] = useState(null);
+      const [savingProfile, setSavingProfile] = useState(false);
+      const [importing, setImporting] = useState(false);
+      const [importError, setImportError] = useState(null);
 
-      const [urlDraft, setUrlDraft] = useState(syncUrl);
-      const [keyDraft, setKeyDraft] = useState(syncKey);
-      const [connecting, setConnecting] = useState(false);
-      const connected = !!(syncUrl && syncKey);
+      useEffect(() => {
+        setUsername(profile ? profile.username : "");
+        setDisplayName(profile ? profile.display_name : "");
+      }, [profile]);
 
       const test = async () => {
         setTestState("testing");
@@ -1848,16 +1955,71 @@ function IconPlus() {
         }
       };
 
-      const connect = async () => {
-        if (!urlDraft.trim() || !keyDraft.trim()) return;
-        setConnecting(true);
-        await onConnectSync(urlDraft.trim(), keyDraft.trim());
-        setConnecting(false);
+      const saveProfile = async () => {
+        setSavingProfile(true);
+        setProfileError(null);
+        const error = await onSaveProfile({ username, displayName });
+        setProfileError(error);
+        setSavingProfile(false);
+      };
+
+      const importLegacy = async () => {
+        if (!window.confirm("Import the old shared diary into this account? Existing account entries with the same movie will be updated.")) return;
+        setImporting(true);
+        setImportError(null);
+        const error = await onImportLegacy();
+        setImportError(error);
+        setImporting(false);
       };
 
       return (
         <section className="settings">
-          <h1 className="page-head">Settings</h1>
+          <h1 className="page-head">Profile</h1>
+
+          <div className="profile-summary">
+            <div className="avatar large">{(displayName || username || email || "?").slice(0, 1).toUpperCase()}</div>
+            <div>
+              <div className="profile-summary-name">{profile ? profile.display_name : "Marquee user"}</div>
+              <div className="quiet-note">{email}</div>
+            </div>
+          </div>
+
+          <div className="profile-fields">
+            <label className="field">
+              <span>Display name</span>
+              <input type="text" value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={40} />
+            </label>
+            <label className="field">
+              <span>Username</span>
+              <input
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value.toLowerCase())}
+                maxLength={30}
+                autoCapitalize="none"
+                spellCheck={false}
+              />
+            </label>
+          </div>
+          <button className="btn-log" onClick={saveProfile} disabled={savingProfile || !username.trim()}>
+            {savingProfile ? "Saving…" : "Save profile"}
+          </button>
+          {profileError && <div className="notice error">{profileError}</div>}
+
+          <h2 className="section-head">Your account</h2>
+          <div className="account-actions">
+            <button className="btn-ghost" onClick={onOpenStats}>View your stats</button>
+            <button className="btn-ghost" onClick={importLegacy} disabled={importing}>
+              {importing ? "Importing…" : "Import old diary"}
+            </button>
+            <button className="btn-ghost danger" onClick={onSignOut}>Sign out</button>
+          </div>
+          <p className="quiet-note">
+            Import old diary is only for the owner of the original shared Marquee diary. Friends should leave it alone.
+          </p>
+          {importError && <div className="notice error">{importError}</div>}
+
+          <h2 className="section-head">Movie data</h2>
           <div className="field">
             <span>TMDB API key</span>
             <input
@@ -1881,58 +2043,151 @@ function IconPlus() {
           </div>
           {testState === "ok" && <div className="notice good">Key works — TMDB answered.</div>}
           {testState && testState !== "ok" && testState !== "testing" && <div className="notice error">{testState}</div>}
-
-          <h2 className="section-head">Cloud sync</h2>
-          <p className="quiet-note">
-            Optional. Connect a free Supabase project to keep the same diary in sync across every device.
-            Setup steps and the one-time SQL are in the repo's README.
-          </p>
-
-          {connected ? (
-            <>
-              <div className={"notice " + (syncStatus === "offline" ? "error" : "good")}>
-                {syncStatus === "offline"
-                  ? "Connected, but couldn't reach Supabase just now — using this device's local copy until it's back."
-                  : "Connected — this diary syncs across every device you connect."}
-              </div>
-              <p className="quiet-note" style={{ wordBreak: "break-all" }}>{syncUrl}</p>
-              <button className="btn-ghost danger" onClick={onDisconnectSync}>Disconnect this device</button>
-            </>
-          ) : (
-            <>
-              <div className="field">
-                <span>Supabase project URL</span>
-                <input
-                  type="text"
-                  value={urlDraft}
-                  onChange={(e) => setUrlDraft(e.target.value)}
-                  placeholder="https://xxxxxxxx.supabase.co"
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-              </div>
-              <div className="field">
-                <span>Supabase anon public key</span>
-                <input
-                  type="text"
-                  value={keyDraft}
-                  onChange={(e) => setKeyDraft(e.target.value)}
-                  placeholder="Paste the anon/public API key"
-                  autoComplete="off"
-                  spellCheck={false}
-                />
-              </div>
-              <button className="btn-log" disabled={!urlDraft.trim() || !keyDraft.trim() || connecting} onClick={connect}>
-                {connecting ? "Connecting…" : "Connect"}
-              </button>
-              <p className="quiet-note">
-                First device you connect uploads its diary as the shared copy. Any device you connect after
-                that pulls that copy down — connect your main device first.
-              </p>
-            </>
-          )}
         </section>
       );
+    }
+
+    /* ---------------- authentication ---------------- */
+
+    function AuthPage({ client }) {
+      const [email, setEmail] = useState("");
+      const [password, setPassword] = useState("");
+      const [busy, setBusy] = useState(false);
+      const [message, setMessage] = useState(null);
+      const [error, setError] = useState(null);
+
+      const signIn = async (e) => {
+        e.preventDefault();
+        setBusy(true);
+        setError(null);
+        setMessage(null);
+        const { error: signInError } = await client.auth.signInWithPassword({ email: email.trim(), password });
+        if (signInError) setError(signInError.message);
+        setBusy(false);
+      };
+
+      const resetPassword = async () => {
+        if (!email.trim()) {
+          setError("Enter your email address first.");
+          return;
+        }
+        setBusy(true);
+        setError(null);
+        const { error: resetError } = await client.auth.resetPasswordForEmail(email.trim(), {
+          redirectTo: window.location.origin + window.location.pathname,
+        });
+        if (resetError) setError(resetError.message);
+        else setMessage("Password reset email sent.");
+        setBusy(false);
+      };
+
+      return (
+        <div className="mvd auth-shell">
+          <StyleTag />
+          <div className="auth-brand"><LogoMark size={42} /><span>MARQUEE</span></div>
+          <form className="auth-card" onSubmit={signIn}>
+            <div className="eyebrow">Private film circle</div>
+            <h1>Welcome back</h1>
+            <p>Sign in with the account connected to your Marquee invitation.</p>
+            <label className="field">
+              <span>Email</span>
+              <input type="text" inputMode="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+            </label>
+            <label className="field">
+              <span>Password</span>
+              <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            </label>
+            {error && <div className="notice error">{error}</div>}
+            {message && <div className="notice good">{message}</div>}
+            <button className="btn-log auth-submit" disabled={busy || !email.trim() || !password}>
+              {busy ? "Signing in…" : "Sign in"}
+            </button>
+            <button className="link auth-link" type="button" onClick={resetPassword} disabled={busy}>Forgot password?</button>
+            <p className="auth-invite-note">Marquee is invite-only. Ask the owner for an invitation if you don't have an account.</p>
+          </form>
+        </div>
+      );
+    }
+
+    function SetPasswordPage({ client, onDone }) {
+      const [password, setPassword] = useState("");
+      const [confirm, setConfirm] = useState("");
+      const [busy, setBusy] = useState(false);
+      const [error, setError] = useState(null);
+
+      const save = async (e) => {
+        e.preventDefault();
+        if (password.length < 8) return setError("Use at least 8 characters.");
+        if (password !== confirm) return setError("The passwords don't match.");
+        setBusy(true);
+        setError(null);
+        const { error: updateError } = await client.auth.updateUser({ password });
+        if (updateError) setError(updateError.message);
+        else onDone();
+        setBusy(false);
+      };
+
+      return (
+        <div className="mvd auth-shell">
+          <StyleTag />
+          <div className="auth-brand"><LogoMark size={42} /><span>MARQUEE</span></div>
+          <form className="auth-card" onSubmit={save}>
+            <div className="eyebrow">Invitation accepted</div>
+            <h1>Create your password</h1>
+            <p>Finish setting up your account to enter Marquee.</p>
+            <label className="field">
+              <span>New password</span>
+              <input type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            </label>
+            <label className="field">
+              <span>Confirm password</span>
+              <input type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+            </label>
+            {error && <div className="notice error">{error}</div>}
+            <button className="btn-log auth-submit" disabled={busy || !password || !confirm}>
+              {busy ? "Saving…" : "Enter Marquee"}
+            </button>
+          </form>
+        </div>
+      );
+    }
+
+    function AuthShell() {
+      const [session, setSession] = useState(null);
+      const [ready, setReady] = useState(false);
+      const [needsPassword, setNeedsPassword] = useState(AUTH_URL_TYPE === "invite" || AUTH_URL_TYPE === "recovery");
+
+      useEffect(() => {
+        APP_CLIENT.auth.getSession().then(({ data }) => {
+          setSession(data.session || null);
+          setReady(true);
+        });
+        const { data: listener } = APP_CLIENT.auth.onAuthStateChange((event, nextSession) => {
+          setSession(nextSession);
+          if (event === "PASSWORD_RECOVERY") setNeedsPassword(true);
+          setReady(true);
+        });
+        return () => listener.subscription.unsubscribe();
+      }, []);
+
+      const finishPassword = () => {
+        setNeedsPassword(false);
+        window.history.replaceState({}, document.title, window.location.pathname);
+      };
+
+      const signOut = async () => {
+        await APP_CLIENT.auth.signOut();
+        setSession(null);
+      };
+
+      if (!ready) {
+        return (
+          <div className="mvd"><StyleTag /><div className="app-loader"><LogoMark size={44} /><span>Checking your account…</span></div></div>
+        );
+      }
+      if (session && needsPassword) return <SetPasswordPage client={APP_CLIENT} onDone={finishPassword} />;
+      if (!session) return <AuthPage client={APP_CLIENT} />;
+      return <MovieDiary client={APP_CLIENT} user={session.user} onSignOut={signOut} />;
     }
 
     /* ---------------- styles ---------------- */
@@ -2117,7 +2372,7 @@ function IconPlus() {
 .search-expand input { flex: 1; border-radius: 0; padding: 7px 14px; font-size: 13px; }
 .controls-collapsed .count { color: var(--text-muted); font-size: 11.5px; margin-left: auto; }
 
-.mvd select, .mvd input[type="search"], .mvd input[type="text"], .mvd input[type="date"], .mvd textarea {
+.mvd select, .mvd input[type="search"], .mvd input[type="text"], .mvd input[type="password"], .mvd input[type="date"], .mvd textarea {
   background: var(--surface); color: var(--text);
   border: 1px solid var(--line); border-radius: 0;
   padding: 8px 10px; font-family: var(--body); font-size: 14px;
@@ -2155,6 +2410,31 @@ function IconPlus() {
 .film-card:hover .film-card-title { color: var(--text); }
 .film-card-meta { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
 .film-card-date { color: var(--text-muted); font-size: 10.5px; }
+
+/* ---- activity feed ---- */
+.feed-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; border-bottom: 1px solid var(--line); margin-bottom: 22px; }
+.feed-head .page-head { margin: 2px 0 12px; }
+.feed-head .btn-ghost { margin-bottom: 12px; }
+.feed-list { display: flex; flex-direction: column; max-width: 760px; }
+.feed-entry { padding: 22px 0 26px; border-bottom: 1px solid var(--line); }
+.feed-person { display: flex; align-items: center; gap: 11px; margin-bottom: 16px; }
+.avatar {
+  width: 34px; height: 34px; display: grid; place-items: center; flex-shrink: 0;
+  background: var(--surface-raised); color: var(--accent); border: 1px solid var(--line);
+  font-size: 12px; font-weight: 800;
+}
+.avatar.large { width: 54px; height: 54px; font-size: 18px; }
+.feed-name { color: var(--text); font-size: 13px; font-weight: 750; }
+.feed-action { color: var(--text-muted); font-size: 11px; }
+.you-tag { color: var(--accent); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; margin-left: 8px; }
+.feed-content { display: flex; gap: 18px; }
+.feed-poster { width: 92px; aspect-ratio: 2/3; flex-shrink: 0; background: var(--surface-raised); }
+.feed-poster img { width: 100%; height: 100%; object-fit: cover; }
+.feed-copy { min-width: 0; }
+.feed-copy h2 { margin: -4px 0 5px; font-size: 20px; letter-spacing: -.025em; }
+.feed-copy h2 span { color: var(--text-muted); font-size: 13px; font-weight: 500; letter-spacing: 0; }
+.feed-copy p { margin: 13px 0 0; color: var(--text); line-height: 1.65; white-space: pre-wrap; }
+.feed-empty { padding-top: 60px; }
 
 .poster-blank {
   width: 100%; height: 100%; min-height: 120px;
@@ -2360,6 +2640,21 @@ function IconPlus() {
 /* ---- settings ---- */
 .settings { max-width: 560px; }
 .settings input { width: 100%; }
+.profile-summary { display: flex; align-items: center; gap: 14px; padding-bottom: 22px; border-bottom: 1px solid var(--line); margin-bottom: 22px; }
+.profile-summary-name { font-size: 17px; font-weight: 750; }
+.profile-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+.account-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* ---- authentication ---- */
+.auth-shell { min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 9vh 18px 40px; }
+.auth-brand { display: flex; align-items: center; gap: 12px; color: var(--accent); font-size: 20px; font-weight: 800; letter-spacing: .14em; margin-bottom: 34px; }
+.auth-card { width: 100%; max-width: 430px; background: rgba(24,27,33,.82); border: 1px solid var(--line); padding: 30px; box-shadow: 0 28px 80px rgba(0,0,0,.28); }
+.auth-card h1 { margin: 5px 0 7px; font-size: 28px; letter-spacing: -.035em; }
+.auth-card > p { color: var(--text-muted); margin: 0 0 24px; }
+.auth-card .field { margin-bottom: 14px; }
+.auth-submit { width: 100%; margin-top: 5px; }
+.auth-link { display: block; margin: 17px auto 0; }
+.auth-invite-note { border-top: 1px solid var(--line); padding-top: 18px; margin-top: 22px !important; font-size: 12px; text-align: center; }
 
 /* ---- toast ---- */
 .toast {
@@ -2386,13 +2681,19 @@ function IconPlus() {
   .marquee-board { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); }
   .rank-controls { grid-template-columns: 1fr 1fr; }
   .rank-controls .btn-ghost { grid-column: 1 / -1; order: -1; }
+  .feed-content { gap: 14px; }
+  .feed-poster { width: 74px; }
+  .feed-copy h2 { font-size: 17px; }
+  .profile-fields { grid-template-columns: 1fr; }
+  .auth-shell { padding-top: 7vh; }
+  .auth-card { padding: 24px 20px; }
 }
     `}</style>
   );
 }
 
     const root = ReactDOM.createRoot(document.getElementById("root"));
-    root.render(<MovieDiary />);
+    root.render(<AuthShell />);
 
   </script>
 </body>
