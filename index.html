@@ -83,208 +83,206 @@
     </div>
   </div>
 
-  <!-- React, ReactDOM, and Babel standalone (in-browser JSX compiler) —
-     this lets the app run as a single plain HTML file with no build step.
-     Requires an internet connection to load these scripts. -->
+  <!-- Precompiled application runtime. React and Supabase load from their CDNs. -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-  <script src="https://unpkg.com/@babel/standalone@7/babel.min.js" crossorigin></script>
 
   <!-- Supabase client — only used if you connect cloud sync in Settings.
      Harmless if you never set it up; the app works local-only otherwise. -->
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 
-  <script type="text/babel" data-presets="react">
-    const { useState, useEffect, useRef, useMemo, useCallback } = React;
+  <script>
 
-    /* ------------------------------------------------------------------
-       MARQUEE — a personal movie diary
-       Design direction: a precise, poster-forward cinematic archive.
-       Sharp geometry, restrained color, compact metadata, and clear
-       editorial hierarchy keep the interface focused on the films.
-    ------------------------------------------------------------------- */
+const { useState, useEffect, useRef, useMemo, useCallback } = React;
 
-    const IMG = "https://image.tmdb.org/t/p/";
-    const STORE = {
+/* ------------------------------------------------------------------
+   MARQUEE — a personal movie diary
+   Design direction: a precise, poster-forward cinematic archive.
+   Sharp geometry, restrained color, compact metadata, and clear
+   editorial hierarchy keep the interface focused on the films.
+------------------------------------------------------------------- */
+
+const IMG = "https://image.tmdb.org/t/p/";
+const STORE = {
   settings: "moviediary-settings",
   entries: "moviediary-entries",
   lists: "moviediary-lists",
   top5: "moviediary-top5",
-  movieCache: "moviediary-movie-cache",
+  movieCache: "moviediary-movie-cache"
 };
 
-    /* ---------------- storage helpers ----------------
-       Standalone build: persists to this browser's localStorage instead of
-       the Claude-artifact window.storage API, so the app can be opened as a
-       plain HTML file or hosted (e.g. on Netlify) outside claude.ai. Same
-       async signature as before so nothing else in the app had to change. */
+/* ---------------- storage helpers ----------------
+   Standalone build: persists to this browser's localStorage instead of
+   the Claude-artifact window.storage API, so the app can be opened as a
+   plain HTML file or hosted (e.g. on Netlify) outside claude.ai. Same
+   async signature as before so nothing else in the app had to change. */
 
-    async function loadKey(key, fallback) {
-      try {
-        const raw = localStorage.getItem(key);
-        if (raw !== null) return JSON.parse(raw);
-      } catch (e) {
-        /* key doesn't exist yet, or storage is unavailable — that's fine */
-      }
-      return fallback;
-    }
+async function loadKey(key, fallback) {
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw !== null) return JSON.parse(raw);
+  } catch (e) {
 
-    async function saveKey(key, value) {
-      try {
-        localStorage.setItem(key, JSON.stringify(value));
-        return true;
-      } catch (e) {
-        console.error("Save failed:", e);
-        return false;
-      }
-    }
+    /* key doesn't exist yet, or storage is unavailable — that's fine */}
+  return fallback;
+}
 
-    /* ---------------- authenticated cloud data ----------------
-       Supabase Auth identifies each member. Diary entries are normalized
-       into individual rows for the shared feed, while lists, Top 5, and the
-       list-only movie cache live in a private per-user state row. The old
-       kv_store name remains only for the owner's one-time legacy import. */
+async function saveKey(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+    return true;
+  } catch (e) {
+    console.error("Save failed:", e);
+    return false;
+  }
+}
 
-    const SYNC_TABLE = "kv_store";
-    const SUPABASE_URL = "https://wfubbacbkqdxncksjbnm.supabase.co";
-    const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_nVTWZoxsaer7Uw3ow1NuKQ_ZKc_smL-";
-    const AUTH_URL_TYPE = new URLSearchParams(window.location.hash.replace(/^#/, "")).get("type");
-    const APP_CLIENT = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
-      auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+/* ---------------- authenticated cloud data ----------------
+   Supabase Auth identifies each member. Diary entries are normalized
+   into individual rows for the shared feed, while lists, Top 5, and the
+   list-only movie cache live in a private per-user state row. The old
+   kv_store name remains only for the owner's one-time legacy import. */
+
+const SYNC_TABLE = "kv_store";
+const SUPABASE_URL = "https://wfubbacbkqdxncksjbnm.supabase.co";
+const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_nVTWZoxsaer7Uw3ow1NuKQ_ZKc_smL-";
+const AUTH_URL_TYPE = new URLSearchParams(window.location.hash.replace(/^#/, "")).get("type");
+const APP_CLIENT = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
+  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+});
+
+function userStoreKey(key, userId) {
+  return `${key}:${userId}`;
+}
+
+function rowToEntry(row) {
+  return {
+    id: String(row.tmdb_id),
+    title: row.title,
+    releaseDate: row.release_date || "",
+    posterPath: row.poster_path || null,
+    chosenPoster: row.chosen_poster || null,
+    rating: Number(row.rating),
+    review: row.review || "",
+    watchedDate: row.watched_date,
+    genres: row.genres || [],
+    runtime: row.runtime || null,
+    loggedAt: new Date(row.logged_at).getTime()
+  };
+}
+
+function entryToRow(entry, userId) {
+  return {
+    user_id: userId,
+    tmdb_id: Number(entry.id),
+    title: entry.title,
+    release_date: entry.releaseDate || "",
+    poster_path: entry.posterPath || null,
+    chosen_poster: entry.chosenPoster || null,
+    rating: entry.rating,
+    review: entry.review || "",
+    watched_date: entry.watchedDate,
+    genres: entry.genres || [],
+    runtime: entry.runtime || null,
+    logged_at: new Date(entry.loggedAt || Date.now()).toISOString(),
+    updated_at: new Date().toISOString()
+  };
+}
+
+/* ---------------- TMDB helpers ---------------- */
+
+function buildTmdb(apiKey) {
+  return async function tmdb(path, params = {}) {
+    if (!apiKey) throw new Error("NO_KEY");
+    const isBearer = apiKey.startsWith("eyJ"); // v4 read access token
+    const url = new URL("https://api.themoviedb.org/3" + path);
+    Object.entries(params).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== "") url.searchParams.set(k, v);
     });
-
-    function userStoreKey(key, userId) {
-      return `${key}:${userId}`;
-    }
-
-    function rowToEntry(row) {
-      return {
-        id: String(row.tmdb_id),
-        title: row.title,
-        releaseDate: row.release_date || "",
-        posterPath: row.poster_path || null,
-        chosenPoster: row.chosen_poster || null,
-        rating: Number(row.rating),
-        review: row.review || "",
-        watchedDate: row.watched_date,
-        genres: row.genres || [],
-        runtime: row.runtime || null,
-        loggedAt: new Date(row.logged_at).getTime(),
-      };
-    }
-
-    function entryToRow(entry, userId) {
-      return {
-        user_id: userId,
-        tmdb_id: Number(entry.id),
-        title: entry.title,
-        release_date: entry.releaseDate || "",
-        poster_path: entry.posterPath || null,
-        chosen_poster: entry.chosenPoster || null,
-        rating: entry.rating,
-        review: entry.review || "",
-        watched_date: entry.watchedDate,
-        genres: entry.genres || [],
-        runtime: entry.runtime || null,
-        logged_at: new Date(entry.loggedAt || Date.now()).toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-    }
-
-    /* ---------------- TMDB helpers ---------------- */
-
-    function buildTmdb(apiKey) {
-      return async function tmdb(path, params = {}) {
-        if (!apiKey) throw new Error("NO_KEY");
-        const isBearer = apiKey.startsWith("eyJ"); // v4 read access token
-        const url = new URL("https://api.themoviedb.org/3" + path);
-        Object.entries(params).forEach(([k, v]) => {
-          if (v !== undefined && v !== null && v !== "") url.searchParams.set(k, v);
-        });
-        if (!isBearer) url.searchParams.set("api_key", apiKey);
-        let res;
-        try {
-          res = await fetch(url.toString(), {
-            headers: isBearer ? { Authorization: "Bearer " + apiKey } : {},
-          });
-        } catch (e) {
-          throw new Error("NETWORK");
-        }
-        if (res.status === 401) throw new Error("BAD_KEY");
-        if (res.status === 429) throw new Error("RATE_LIMIT");
-        if (!res.ok) throw new Error("HTTP_" + res.status);
-        return res.json();
-      };
-    }
-
-    function friendlyError(err) {
-      switch (err.message) {
-        case "NO_KEY":
-          return "Add your TMDB API key in Settings to search for movies.";
-        case "BAD_KEY":
-          return "TMDB rejected that API key. Check it in Settings.";
-        case "RATE_LIMIT":
-          return "TMDB is asking us to slow down. Wait a few seconds and try again.";
-        case "NETWORK":
-          return "Couldn't reach TMDB. Check your connection and try again.";
-        default:
-          return "Something went wrong talking to TMDB. Try again in a moment.";
-      }
-    }
-
-    function makeAvatarBlob(file) {
-      return new Promise((resolve, reject) => {
-        if (!file || !file.type.startsWith("image/")) {
-          reject(new Error("Choose an image file."));
-          return;
-        }
-        if (file.size > 15 * 1024 * 1024) {
-          reject(new Error("Choose an image smaller than 15 MB."));
-          return;
-        }
-
-        const objectUrl = URL.createObjectURL(file);
-        const image = new Image();
-        image.onload = () => {
-          const side = Math.min(image.naturalWidth, image.naturalHeight);
-          const sourceX = (image.naturalWidth - side) / 2;
-          const sourceY = (image.naturalHeight - side) / 2;
-          const canvas = document.createElement("canvas");
-          canvas.width = 512;
-          canvas.height = 512;
-          const context = canvas.getContext("2d");
-          context.drawImage(image, sourceX, sourceY, side, side, 0, 0, 512, 512);
-          URL.revokeObjectURL(objectUrl);
-          canvas.toBlob(
-            (blob) => blob ? resolve(blob) : reject(new Error("That image couldn't be prepared.")),
-            "image/jpeg",
-            0.88
-          );
-        };
-        image.onerror = () => {
-          URL.revokeObjectURL(objectUrl);
-          reject(new Error("That image format isn't supported on this device."));
-        };
-        image.src = objectUrl;
+    if (!isBearer) url.searchParams.set("api_key", apiKey);
+    let res;
+    try {
+      res = await fetch(url.toString(), {
+        headers: isBearer ? { Authorization: "Bearer " + apiKey } : {}
       });
+    } catch (e) {
+      throw new Error("NETWORK");
+    }
+    if (res.status === 401) throw new Error("BAD_KEY");
+    if (res.status === 429) throw new Error("RATE_LIMIT");
+    if (!res.ok) throw new Error("HTTP_" + res.status);
+    return res.json();
+  };
+}
+
+function friendlyError(err) {
+  switch (err.message) {
+    case "NO_KEY":
+      return "Add your TMDB API key in Settings to search for movies.";
+    case "BAD_KEY":
+      return "TMDB rejected that API key. Check it in Settings.";
+    case "RATE_LIMIT":
+      return "TMDB is asking us to slow down. Wait a few seconds and try again.";
+    case "NETWORK":
+      return "Couldn't reach TMDB. Check your connection and try again.";
+    default:
+      return "Something went wrong talking to TMDB. Try again in a moment.";
+  }
+}
+
+function makeAvatarBlob(file) {
+  return new Promise((resolve, reject) => {
+    if (!file || !file.type.startsWith("image/")) {
+      reject(new Error("Choose an image file."));
+      return;
+    }
+    if (file.size > 15 * 1024 * 1024) {
+      reject(new Error("Choose an image smaller than 15 MB."));
+      return;
     }
 
-    /* ---------------- small utilities ---------------- */
+    const objectUrl = URL.createObjectURL(file);
+    const image = new Image();
+    image.onload = () => {
+      const side = Math.min(image.naturalWidth, image.naturalHeight);
+      const sourceX = (image.naturalWidth - side) / 2;
+      const sourceY = (image.naturalHeight - side) / 2;
+      const canvas = document.createElement("canvas");
+      canvas.width = 512;
+      canvas.height = 512;
+      const context = canvas.getContext("2d");
+      context.drawImage(image, sourceX, sourceY, side, side, 0, 0, 512, 512);
+      URL.revokeObjectURL(objectUrl);
+      canvas.toBlob(
+        (blob) => blob ? resolve(blob) : reject(new Error("That image couldn't be prepared.")),
+        "image/jpeg",
+        0.88
+      );
+    };
+    image.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
+      reject(new Error("That image format isn't supported on this device."));
+    };
+    image.src = objectUrl;
+  });
+}
 
-    function fmtDate(iso) {
-      if (!iso) return "—";
-      const [y, m, d] = iso.split("-").map(Number);
-      const dt = new Date(y, m - 1, d);
-      return dt.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-    }
+/* ---------------- small utilities ---------------- */
 
-    function todayISO() {
-      const d = new Date();
-      const p = (n) => String(n).padStart(2, "0");
-      return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
-    }
+function fmtDate(iso) {
+  if (!iso) return "—";
+  const [y, m, d] = iso.split("-").map(Number);
+  const dt = new Date(y, m - 1, d);
+  return dt.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
 
-    function yearOf(entry) {
+function todayISO() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+function yearOf(entry) {
   return entry.releaseDate ? entry.releaseDate.slice(0, 4) : "";
 }
 
@@ -300,258 +298,258 @@ function resolveMovie(id, entries, movieCache) {
   return null;
 }
 
-    function uid() {
-      return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
-    }
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
 
-    /* ---------------- tab bar icons ---------------- */
+/* ---------------- tab bar icons ---------------- */
 
-    function IconFilms() {
-      return (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" aria-hidden="true">
-          <path d="M3 9a2 2 0 000 4v3.5a1 1 0 001 1h16a1 1 0 001-1V13a2 2 0 000-4V5.5a1 1 0 00-1-1H4a1 1 0 00-1 1V9z" />
-          <line x1="14" y1="4.5" x2="14" y2="19.5" strokeDasharray="2 2.4" />
-        </svg>
-      );
-    }
-    function IconLists() {
-      return (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true">
-          <line x1="8.5" y1="6" x2="20" y2="6" />
-          <line x1="8.5" y1="12" x2="20" y2="12" />
-          <line x1="8.5" y1="18" x2="20" y2="18" />
-          <circle cx="4.5" cy="6" r="1" />
-          <circle cx="4.5" cy="12" r="1" />
-          <circle cx="4.5" cy="18" r="1" />
-        </svg>
-      );
-    }
-    function IconStats() {
-      return (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          <line x1="5" y1="20" x2="5" y2="12" />
-          <line x1="12" y1="20" x2="12" y2="6.5" />
-          <line x1="19" y1="20" x2="19" y2="15" />
-          <line x1="3" y1="20.5" x2="21" y2="20.5" />
-        </svg>
-      );
-    }
-    function IconSettings() {
-      return (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" aria-hidden="true">
-          <circle cx="12" cy="12" r="8.5" />
-          <circle cx="12" cy="12" r="2.6" />
-          <line x1="12" y1="2.7" x2="12" y2="6.3" />
-          <line x1="12" y1="17.7" x2="12" y2="21.3" />
-          <line x1="2.7" y1="12" x2="6.3" y2="12" />
-          <line x1="17.7" y1="12" x2="21.3" y2="12" />
-        </svg>
-      );
-    }
-    function IconSearch() {
-      return (
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
-          <circle cx="10.5" cy="10.5" r="6.5" />
-          <line x1="15.5" y1="15.5" x2="21" y2="21" />
-        </svg>
-      );
-    }
+function IconFilms() {
+  return (/*#__PURE__*/
+    React.createElement("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.6", strokeLinejoin: "round", "aria-hidden": "true" }, /*#__PURE__*/
+    React.createElement("path", { d: "M3 9a2 2 0 000 4v3.5a1 1 0 001 1h16a1 1 0 001-1V13a2 2 0 000-4V5.5a1 1 0 00-1-1H4a1 1 0 00-1 1V9z" }), /*#__PURE__*/
+    React.createElement("line", { x1: "14", y1: "4.5", x2: "14", y2: "19.5", strokeDasharray: "2 2.4" })
+    ));
+
+}
+function IconLists() {
+  return (/*#__PURE__*/
+    React.createElement("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.6", strokeLinecap: "round", "aria-hidden": "true" }, /*#__PURE__*/
+    React.createElement("line", { x1: "8.5", y1: "6", x2: "20", y2: "6" }), /*#__PURE__*/
+    React.createElement("line", { x1: "8.5", y1: "12", x2: "20", y2: "12" }), /*#__PURE__*/
+    React.createElement("line", { x1: "8.5", y1: "18", x2: "20", y2: "18" }), /*#__PURE__*/
+    React.createElement("circle", { cx: "4.5", cy: "6", r: "1" }), /*#__PURE__*/
+    React.createElement("circle", { cx: "4.5", cy: "12", r: "1" }), /*#__PURE__*/
+    React.createElement("circle", { cx: "4.5", cy: "18", r: "1" })
+    ));
+
+}
+function IconStats() {
+  return (/*#__PURE__*/
+    React.createElement("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.6", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true" }, /*#__PURE__*/
+    React.createElement("line", { x1: "5", y1: "20", x2: "5", y2: "12" }), /*#__PURE__*/
+    React.createElement("line", { x1: "12", y1: "20", x2: "12", y2: "6.5" }), /*#__PURE__*/
+    React.createElement("line", { x1: "19", y1: "20", x2: "19", y2: "15" }), /*#__PURE__*/
+    React.createElement("line", { x1: "3", y1: "20.5", x2: "21", y2: "20.5" })
+    ));
+
+}
+function IconSettings() {
+  return (/*#__PURE__*/
+    React.createElement("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.6", strokeLinecap: "round", "aria-hidden": "true" }, /*#__PURE__*/
+    React.createElement("circle", { cx: "12", cy: "12", r: "8.5" }), /*#__PURE__*/
+    React.createElement("circle", { cx: "12", cy: "12", r: "2.6" }), /*#__PURE__*/
+    React.createElement("line", { x1: "12", y1: "2.7", x2: "12", y2: "6.3" }), /*#__PURE__*/
+    React.createElement("line", { x1: "12", y1: "17.7", x2: "12", y2: "21.3" }), /*#__PURE__*/
+    React.createElement("line", { x1: "2.7", y1: "12", x2: "6.3", y2: "12" }), /*#__PURE__*/
+    React.createElement("line", { x1: "17.7", y1: "12", x2: "21.3", y2: "12" })
+    ));
+
+}
+function IconSearch() {
+  return (/*#__PURE__*/
+    React.createElement("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.8", strokeLinecap: "round", "aria-hidden": "true" }, /*#__PURE__*/
+    React.createElement("circle", { cx: "10.5", cy: "10.5", r: "6.5" }), /*#__PURE__*/
+    React.createElement("line", { x1: "15.5", y1: "15.5", x2: "21", y2: "21" })
+    ));
+
+}
 
 function LogoMark({ size = 30 }) {
-  return (
-    <svg className="logo-mark" width={size * 1.05} height={size} viewBox="0 0 106 101" aria-hidden="true">
-      <path d="M0 1H18V101H0Z" />
-      <path d="M18 1L53 53L44 68L18 29Z" />
-      <path d="M88 1L53 53L62 68L88 29Z" />
-      <path d="M88 1H106V101H88Z" />
-    </svg>
-  );
+  return (/*#__PURE__*/
+    React.createElement("svg", { className: "logo-mark", width: size * 1.05, height: size, viewBox: "0 0 106 101", "aria-hidden": "true" }, /*#__PURE__*/
+    React.createElement("path", { d: "M0 1H18V101H0Z" }), /*#__PURE__*/
+    React.createElement("path", { d: "M18 1L53 53L44 68L18 29Z" }), /*#__PURE__*/
+    React.createElement("path", { d: "M88 1L53 53L62 68L88 29Z" }), /*#__PURE__*/
+    React.createElement("path", { d: "M88 1H106V101H88Z" })
+    ));
+
 }
 
 function IconEdit() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
-    </svg>
-  );
+  return (/*#__PURE__*/
+    React.createElement("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.8", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true" }, /*#__PURE__*/
+    React.createElement("path", { d: "M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" })
+    ));
+
 }
 
 function IconPlus() {
-  return (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
-      <line x1="12" y1="5" x2="12" y2="19" />
-      <line x1="5" y1="12" x2="19" y2="12" />
-    </svg>
-  );
+  return (/*#__PURE__*/
+    React.createElement("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.8", strokeLinecap: "round", "aria-hidden": "true" }, /*#__PURE__*/
+    React.createElement("line", { x1: "12", y1: "5", x2: "12", y2: "19" }), /*#__PURE__*/
+    React.createElement("line", { x1: "5", y1: "12", x2: "19", y2: "12" })
+    ));
+
 }
 
-    const NAV_ITEMS = [
-      { name: "feed", label: "Feed" },
-      { name: "diary", label: "Films", Icon: IconFilms },
-      { name: "lists", label: "Lists", Icon: IconLists },
-      { name: "stats", label: "Stats", Icon: IconStats },
-      { name: "settings", label: "Profile", Icon: IconSettings },
-    ];
-    const MOBILE_NAV_ITEMS = NAV_ITEMS.filter((item) => ["feed", "diary", "lists", "settings"].includes(item.name));
+const NAV_ITEMS = [
+{ name: "feed", label: "Feed" },
+{ name: "diary", label: "Films", Icon: IconFilms },
+{ name: "lists", label: "Lists", Icon: IconLists },
+{ name: "stats", label: "Stats", Icon: IconStats },
+{ name: "settings", label: "Profile", Icon: IconSettings }];
 
-    /* ---------------- stars ---------------- */
+const MOBILE_NAV_ITEMS = NAV_ITEMS.filter((item) => ["feed", "diary", "lists", "settings"].includes(item.name));
 
-    function StarDisplay({ value, size = 15 }) {
-      return (
-        <span className="stars" aria-label={`${value} out of 5 stars`} style={{ fontSize: size }}>
-          {[0, 1, 2, 3, 4].map((i) => {
-            const fill = Math.max(0, Math.min(1, value - i));
-            return (
-              <span className="star-wrap" key={i} aria-hidden="true">
-                <span className="star-empty">★</span>
-                <span className="star-fill" style={{ width: fill * 100 + "%" }}>★</span>
-              </span>
-            );
-          })}
-        </span>
-      );
+/* ---------------- stars ---------------- */
+
+function StarDisplay({ value, size = 15 }) {
+  return (/*#__PURE__*/
+    React.createElement("span", { className: "stars", "aria-label": `${value} out of 5 stars`, style: { fontSize: size } },
+    [0, 1, 2, 3, 4].map((i) => {
+      const fill = Math.max(0, Math.min(1, value - i));
+      return (/*#__PURE__*/
+        React.createElement("span", { className: "star-wrap", key: i, "aria-hidden": "true" }, /*#__PURE__*/
+        React.createElement("span", { className: "star-empty" }, "★"), /*#__PURE__*/
+        React.createElement("span", { className: "star-fill", style: { width: fill * 100 + "%" } }, "★")
+        ));
+
+    })
+    ));
+
+}
+
+function StarInput({ value, onChange, size = 26 }) {
+  const [hover, setHover] = useState(null);
+  const shown = hover != null ? hover : value;
+
+  const handleKey = (e) => {
+    if (e.key === "ArrowRight" || e.key === "ArrowUp") {
+      e.preventDefault();
+      onChange(Math.min(5, (value || 0) + 0.5));
+    } else if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
+      e.preventDefault();
+      onChange(Math.max(0.5, (value || 0.5) - 0.5));
     }
+  };
 
-    function StarInput({ value, onChange, size = 26 }) {
-      const [hover, setHover] = useState(null);
-      const shown = hover != null ? hover : value;
+  return (/*#__PURE__*/
+    React.createElement("div", {
+      className: "star-input",
+      role: "slider",
+      tabIndex: 0,
+      "aria-label": "Rating",
+      "aria-valuemin": 0.5,
+      "aria-valuemax": 5,
+      "aria-valuenow": value || 0,
+      "aria-valuetext": `${value || 0} stars`,
+      onKeyDown: handleKey,
+      onMouseLeave: () => setHover(null),
+      style: { fontSize: size } },
 
-      const handleKey = (e) => {
-        if (e.key === "ArrowRight" || e.key === "ArrowUp") {
-          e.preventDefault();
-          onChange(Math.min(5, (value || 0) + 0.5));
-        } else if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
-          e.preventDefault();
-          onChange(Math.max(0.5, (value || 0.5) - 0.5));
-        }
-      };
+    [0, 1, 2, 3, 4].map((i) => {
+      const fill = Math.max(0, Math.min(1, shown - i));
+      return (/*#__PURE__*/
+        React.createElement("span", { className: "star-wrap star-hit", key: i }, /*#__PURE__*/
+        React.createElement("span", { className: "star-empty", "aria-hidden": "true" }, "★"), /*#__PURE__*/
+        React.createElement("span", { className: "star-fill", "aria-hidden": "true", style: { width: fill * 100 + "%" } }, "★"), /*#__PURE__*/
+        React.createElement("button", {
+          type: "button",
+          className: "half-hit left",
+          tabIndex: -1,
+          "aria-label": `${i + 0.5} stars`,
+          onMouseEnter: () => setHover(i + 0.5),
+          onClick: () => onChange(i + 0.5) }
+        ), /*#__PURE__*/
+        React.createElement("button", {
+          type: "button",
+          className: "half-hit right",
+          tabIndex: -1,
+          "aria-label": `${i + 1} stars`,
+          onMouseEnter: () => setHover(i + 1),
+          onClick: () => onChange(i + 1) }
+        )
+        ));
 
-      return (
-        <div
-          className="star-input"
-          role="slider"
-          tabIndex={0}
-          aria-label="Rating"
-          aria-valuemin={0.5}
-          aria-valuemax={5}
-          aria-valuenow={value || 0}
-          aria-valuetext={`${value || 0} stars`}
-          onKeyDown={handleKey}
-          onMouseLeave={() => setHover(null)}
-          style={{ fontSize: size }}
-        >
-          {[0, 1, 2, 3, 4].map((i) => {
-            const fill = Math.max(0, Math.min(1, shown - i));
-            return (
-              <span className="star-wrap star-hit" key={i}>
-                <span className="star-empty" aria-hidden="true">★</span>
-                <span className="star-fill" aria-hidden="true" style={{ width: fill * 100 + "%" }}>★</span>
-                <button
-                  type="button"
-                  className="half-hit left"
-                  tabIndex={-1}
-                  aria-label={`${i + 0.5} stars`}
-                  onMouseEnter={() => setHover(i + 0.5)}
-                  onClick={() => onChange(i + 0.5)}
-                />
-                <button
-                  type="button"
-                  className="half-hit right"
-                  tabIndex={-1}
-                  aria-label={`${i + 1} stars`}
-                  onMouseEnter={() => setHover(i + 1)}
-                  onClick={() => onChange(i + 1)}
-                />
-              </span>
-            );
-          })}
-          <span className="star-num">{shown ? shown.toFixed(1) : "—"}</span>
-        </div>
-      );
-    }
+    }), /*#__PURE__*/
+    React.createElement("span", { className: "star-num" }, shown ? shown.toFixed(1) : "—")
+    ));
 
-    /* ---------------- film card ---------------- */
+}
 
-    function FilmCard({ entry, onOpen }) {
-      const poster = entry.chosenPoster || entry.posterPath;
-      return (
-        <button className="film-card" onClick={onOpen} aria-label={`Open ${entry.title}`}>
-          <div className="film-card-poster">
-            {poster ? (
-              <img src={IMG + "w342" + poster} alt="" loading="lazy" />
-            ) : (
-              <div className="poster-blank"><span>{entry.title}</span></div>
-            )}
-          </div>
-          <div className="film-card-title">{entry.title}</div>
-          <div className="film-card-meta">
-            <StarDisplay value={entry.rating} size={11} />
-            <span className="film-card-date">{fmtDate(entry.watchedDate)}</span>
-          </div>
-        </button>
-      );
-    }
+/* ---------------- film card ---------------- */
 
-    /* ---------------- film facts (plot, director, cast) ---------------- */
+function FilmCard({ entry, onOpen }) {
+  const poster = entry.chosenPoster || entry.posterPath;
+  return (/*#__PURE__*/
+    React.createElement("button", { className: "film-card", onClick: onOpen, "aria-label": `Open ${entry.title}` }, /*#__PURE__*/
+    React.createElement("div", { className: "film-card-poster" },
+    poster ? /*#__PURE__*/
+    React.createElement("img", { src: IMG + "w342" + poster, alt: "", loading: "lazy" }) : /*#__PURE__*/
 
-    function FilmFacts({ tmdb, movieId, overview }) {
-      const [details, setDetails] = useState(null);
-      const [castCrew, setCastCrew] = useState(null);
-      const [error, setError] = useState(null);
-      const [loading, setLoading] = useState(true);
+    React.createElement("div", { className: "poster-blank" }, /*#__PURE__*/React.createElement("span", null, entry.title))
 
-      useEffect(() => {
-        let cancelled = false;
-        setLoading(true);
-        setError(null);
-        setDetails(null);
-        setCastCrew(null);
-        Promise.all([tmdb("/movie/" + movieId, {}), tmdb("/movie/" + movieId + "/credits", {})])
-          .then(([d, c]) => {
-            if (cancelled) return;
-            setDetails(d);
-            setCastCrew(c);
-          })
-          .catch((err) => {
-            if (!cancelled) setError(friendlyError(err));
-          })
-          .finally(() => {
-            if (!cancelled) setLoading(false);
-          });
-        return () => {
-          cancelled = true;
-        };
-      }, [movieId]);
+    ), /*#__PURE__*/
+    React.createElement("div", { className: "film-card-title" }, entry.title), /*#__PURE__*/
+    React.createElement("div", { className: "film-card-meta" }, /*#__PURE__*/
+    React.createElement(StarDisplay, { value: entry.rating, size: 11 }), /*#__PURE__*/
+    React.createElement("span", { className: "film-card-date" }, fmtDate(entry.watchedDate))
+    )
+    ));
 
-      const plot = (details && details.overview) || overview || "";
-      const director = castCrew && castCrew.crew ? castCrew.crew.find((p) => p.job === "Director") : null;
-      const cast = castCrew && castCrew.cast ? castCrew.cast.slice(0, 10) : [];
+}
 
-      return (
-        <div className="film-facts">
-          {plot && <p className="film-plot">{plot}</p>}
-          {loading && <p className="quiet-note">Loading cast &amp; crew…</p>}
-          {error && <div className="notice error">{error}</div>}
-          {!loading && !error && director && (
-            <p className="film-credit"><span className="film-credit-label">Director</span> {director.name}</p>
-          )}
-          {!loading && !error && cast.length > 0 && (
-            <div className="film-cast">
-              <span className="film-credit-label">Cast</span>
-              <div className="film-cast-list">
-                {cast.map((actor) => (
-                  <span className="cast-chip" key={actor.id}>{actor.name}</span>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      );
-    }
+/* ---------------- film facts (plot, director, cast) ---------------- */
 
-    /* ---------------- main app ---------------- */
+function FilmFacts({ tmdb, movieId, overview }) {
+  const [details, setDetails] = useState(null);
+  const [castCrew, setCastCrew] = useState(null);
+  const [error, setError] = useState(null);
+  const [loading, setLoading] = useState(true);
 
-    function MovieDiary({ client, user, onSignOut }) {
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setDetails(null);
+    setCastCrew(null);
+    Promise.all([tmdb("/movie/" + movieId, {}), tmdb("/movie/" + movieId + "/credits", {})]).
+    then(([d, c]) => {
+      if (cancelled) return;
+      setDetails(d);
+      setCastCrew(c);
+    }).
+    catch((err) => {
+      if (!cancelled) setError(friendlyError(err));
+    }).
+    finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [movieId]);
+
+  const plot = details && details.overview || overview || "";
+  const director = castCrew && castCrew.crew ? castCrew.crew.find((p) => p.job === "Director") : null;
+  const cast = castCrew && castCrew.cast ? castCrew.cast.slice(0, 10) : [];
+
+  return (/*#__PURE__*/
+    React.createElement("div", { className: "film-facts" },
+    plot && /*#__PURE__*/React.createElement("p", { className: "film-plot" }, plot),
+    loading && /*#__PURE__*/React.createElement("p", { className: "quiet-note" }, "Loading cast & crew…"),
+    error && /*#__PURE__*/React.createElement("div", { className: "notice error" }, error),
+    !loading && !error && director && /*#__PURE__*/
+    React.createElement("p", { className: "film-credit" }, /*#__PURE__*/React.createElement("span", { className: "film-credit-label" }, "Director"), " ", director.name),
+
+    !loading && !error && cast.length > 0 && /*#__PURE__*/
+    React.createElement("div", { className: "film-cast" }, /*#__PURE__*/
+    React.createElement("span", { className: "film-credit-label" }, "Cast"), /*#__PURE__*/
+    React.createElement("div", { className: "film-cast-list" },
+    cast.map((actor) => /*#__PURE__*/
+    React.createElement("span", { className: "cast-chip", key: actor.id }, actor.name)
+    )
+    )
+    )
+
+    ));
+
+}
+
+/* ---------------- main app ---------------- */
+
+function MovieDiary({ client, user, onSignOut }) {
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const [apiKey, setApiKey] = useState("");
@@ -581,10 +579,10 @@ function IconPlus() {
     setApiKey(settings.apiKey || "");
 
     const [entryResult, stateResult, profileResult] = await Promise.all([
-      client.from("diary_entries").select("*").eq("user_id", user.id).order("watched_date", { ascending: false }),
-      client.from("user_state").select("*").eq("user_id", user.id).single(),
-      client.from("profiles").select("*").eq("id", user.id).single(),
-    ]);
+    client.from("diary_entries").select("*").eq("user_id", user.id).order("watched_date", { ascending: false }),
+    client.from("user_state").select("*").eq("user_id", user.id).single(),
+    client.from("profiles").select("*").eq("id", user.id).single()]
+    );
 
     let nextEntries = {};
     let nextLists = [];
@@ -603,9 +601,9 @@ function IconPlus() {
 
     if (!stateResult.error && stateResult.data) {
       nextLists = stateResult.data.lists || [];
-      nextTop5 = Array.isArray(stateResult.data.top5) && stateResult.data.top5.length === 5
-        ? stateResult.data.top5
-        : nextTop5;
+      nextTop5 = Array.isArray(stateResult.data.top5) && stateResult.data.top5.length === 5 ?
+      stateResult.data.top5 :
+      nextTop5;
       nextMovieCache = stateResult.data.movie_cache || {};
       saveKey(userStoreKey(STORE.lists, user.id), nextLists);
       saveKey(userStoreKey(STORE.top5, user.id), nextTop5);
@@ -627,7 +625,7 @@ function IconPlus() {
     setLoaded(true);
   }, [client, user.id]);
 
-  useEffect(() => { loadAccountData(); }, [loadAccountData]);
+  useEffect(() => {loadAccountData();}, [loadAccountData]);
 
   const persistEntries = async (next) => {
     const deletedIds = Object.keys(entries).filter((id) => !next[id]);
@@ -636,17 +634,17 @@ function IconPlus() {
 
     let error = null;
     if (deletedIds.length > 0) {
-      const result = await client
-        .from("diary_entries")
-        .delete()
-        .eq("user_id", user.id)
-        .in("tmdb_id", deletedIds.map(Number));
+      const result = await client.
+      from("diary_entries").
+      delete().
+      eq("user_id", user.id).
+      in("tmdb_id", deletedIds.map(Number));
       error = result.error;
     }
     if (!error && Object.keys(next).length > 0) {
-      const result = await client
-        .from("diary_entries")
-        .upsert(Object.values(next).map((entry) => entryToRow(entry, user.id)), { onConflict: "user_id,tmdb_id" });
+      const result = await client.
+      from("diary_entries").
+      upsert(Object.values(next).map((entry) => entryToRow(entry, user.id)), { onConflict: "user_id,tmdb_id" });
       error = result.error;
     }
     if (error) notify("Cloud save failed. Your local copy is still intact.");
@@ -658,7 +656,7 @@ function IconPlus() {
       lists: patch.lists !== undefined ? patch.lists : lists,
       top5: patch.top5 !== undefined ? patch.top5 : top5,
       movie_cache: patch.movieCache !== undefined ? patch.movieCache : movieCache,
-      updated_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
     };
     const { error } = await client.from("user_state").upsert(payload, { onConflict: "user_id" });
     if (error) notify("Cloud save failed. Your local copy is still intact.");
@@ -684,25 +682,25 @@ function IconPlus() {
     if (entries[id] || movieCache[id]) return;
     persistMovieCache({
       ...movieCache,
-      [id]: { title: movie.title, posterPath: movie.poster_path || null, releaseDate: movie.release_date || "" },
+      [id]: { title: movie.title, posterPath: movie.poster_path || null, releaseDate: movie.release_date || "" }
     });
   };
   const persistKey = async (key) => {
     setApiKey(key);
     const settings = await loadKey(STORE.settings, {});
-    if (await saveKey(STORE.settings, { ...settings, apiKey: key })) notify("API key saved.");
-    else notify("Couldn't save the key — try again.");
+    if (await saveKey(STORE.settings, { ...settings, apiKey: key })) notify("API key saved.");else
+    notify("Couldn't save the key — try again.");
   };
 
   const saveProfile = async ({ username, displayName }) => {
     const cleanUsername = username.trim().toLowerCase().replace(/[^a-z0-9_]/g, "");
     if (cleanUsername.length < 3) return "Username must be at least 3 letters, numbers, or underscores.";
-    const { data, error } = await client
-      .from("profiles")
-      .update({ username: cleanUsername, display_name: displayName.trim() || cleanUsername })
-      .eq("id", user.id)
-      .select()
-      .single();
+    const { data, error } = await client.
+    from("profiles").
+    update({ username: cleanUsername, display_name: displayName.trim() || cleanUsername }).
+    eq("id", user.id).
+    select().
+    single();
     if (error) return error.code === "23505" ? "That username is already taken." : error.message;
     setProfile(data);
     notify("Profile updated.");
@@ -713,23 +711,28 @@ function IconPlus() {
     try {
       const avatarBlob = await makeAvatarBlob(file);
       const avatarPath = `${user.id}/avatar.jpg`;
-      const { error: uploadError } = await client.storage
-        .from("avatars")
-        .upload(avatarPath, avatarBlob, {
-          upsert: true,
-          contentType: "image/jpeg",
-          cacheControl: "3600",
-        });
-      if (uploadError) return uploadError.message;
+      const { error: uploadError } = await client.storage.
+      from("avatars").
+      upload(avatarPath, avatarBlob, {
+        upsert: true,
+        contentType: "image/jpeg",
+        cacheControl: "3600"
+      });
+      if (uploadError) {
+        if (/bucket not found/i.test(uploadError.message || "")) {
+          return 'Avatar storage is not configured. Create a public Supabase Storage bucket named exactly "avatars".';
+        }
+        return uploadError.message;
+      }
 
       const { data: publicData } = client.storage.from("avatars").getPublicUrl(avatarPath);
       const avatarUrl = `${publicData.publicUrl}?v=${Date.now()}`;
-      const { data, error } = await client
-        .from("profiles")
-        .update({ avatar_url: avatarUrl, avatar_path: avatarPath })
-        .eq("id", user.id)
-        .select()
-        .single();
+      const { data, error } = await client.
+      from("profiles").
+      update({ avatar_url: avatarUrl, avatar_path: avatarPath }).
+      eq("id", user.id).
+      select().
+      single();
       if (error) return error.message;
       setProfile(data);
       setFeedVersion((version) => version + 1);
@@ -745,28 +748,28 @@ function IconPlus() {
       [STORE.entries]: await loadKey(STORE.entries, {}),
       [STORE.lists]: await loadKey(STORE.lists, []),
       [STORE.top5]: await loadKey(STORE.top5, [null, null, null, null, null]),
-      [STORE.movieCache]: await loadKey(STORE.movieCache, {}),
+      [STORE.movieCache]: await loadKey(STORE.movieCache, {})
     };
     const legacyResult = await client.from(SYNC_TABLE).select("key, value");
     if (!legacyResult.error) {
-      (legacyResult.data || []).forEach((row) => { local[row.key] = row.value; });
+      (legacyResult.data || []).forEach((row) => {local[row.key] = row.value;});
     }
     const legacyEntries = local[STORE.entries] || {};
-    const rows = Object.values(legacyEntries)
-      .filter((entry) => entry && entry.id && entry.rating && entry.watchedDate)
-      .map((entry) => entryToRow(entry, user.id));
+    const rows = Object.values(legacyEntries).
+    filter((entry) => entry && entry.id && entry.rating && entry.watchedDate).
+    map((entry) => entryToRow(entry, user.id));
     if (rows.length === 0) return "No legacy diary entries were found.";
 
-    const { error: entryError } = await client
-      .from("diary_entries")
-      .upsert(rows, { onConflict: "user_id,tmdb_id" });
+    const { error: entryError } = await client.
+    from("diary_entries").
+    upsert(rows, { onConflict: "user_id,tmdb_id" });
     if (entryError) return entryError.message;
     const { error: stateError } = await client.from("user_state").upsert({
       user_id: user.id,
       lists: local[STORE.lists] || [],
       top5: local[STORE.top5] || [null, null, null, null, null],
       movie_cache: local[STORE.movieCache] || {},
-      updated_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
     }, { onConflict: "user_id" });
     if (stateError) return stateError.message;
     await loadAccountData();
@@ -793,7 +796,7 @@ function IconPlus() {
     delete next[id];
     await persistEntries(next);
     await persistLists(lists.map((l) => ({ ...l, movieIds: l.movieIds.filter((m) => m !== id) })));
-    await persistTop5(top5.map((m) => (m === id ? null : m)));
+    await persistTop5(top5.map((m) => m === id ? null : m));
     setFeedVersion((version) => version + 1);
     setView({ name: "diary" });
     notify("Entry removed.");
@@ -801,959 +804,959 @@ function IconPlus() {
 
   const activeNav = view.name === "detail" ? "diary" : view.name === "list" ? "lists" : view.name;
 
-      if (!loaded) {
-        return (
-          <div className="mvd">
-            <StyleTag />
-            <div className="app-loader">
-              <LogoMark size={44} />
-              <span>Loading your films…</span>
-            </div>
-          </div>
+  if (!loaded) {
+    return (/*#__PURE__*/
+      React.createElement("div", { className: "mvd" }, /*#__PURE__*/
+      React.createElement(StyleTag, null), /*#__PURE__*/
+      React.createElement("div", { className: "app-loader" }, /*#__PURE__*/
+      React.createElement(LogoMark, { size: 44 }), /*#__PURE__*/
+      React.createElement("span", null, "Loading your films…")
+      )
+      ));
+
+  }
+
+  return (/*#__PURE__*/
+    React.createElement("div", { className: "mvd" }, /*#__PURE__*/
+    React.createElement(StyleTag, null), /*#__PURE__*/
+    React.createElement("header", { className: "topbar" }, /*#__PURE__*/
+    React.createElement("div", { className: "topbar-inner" }, /*#__PURE__*/
+    React.createElement("button", { className: "brand", onClick: () => setView({ name: "feed" }), "aria-label": "Marquee home" }, /*#__PURE__*/
+    React.createElement(LogoMark, { size: 26 }), /*#__PURE__*/
+    React.createElement("span", null, "MARQUEE")
+    ), /*#__PURE__*/
+    React.createElement("nav", { className: "desktop-nav", "aria-label": "Main" },
+    NAV_ITEMS.map(({ name, label }) => /*#__PURE__*/
+    React.createElement("button", {
+      key: name,
+      className: activeNav === name ? "active" : "",
+      "aria-current": activeNav === name ? "page" : undefined,
+      onClick: () => setView({ name }) },
+
+    label
+    )
+    ), /*#__PURE__*/
+    React.createElement("button", { className: "desktop-log", onClick: () => setLogOpen(true) }, "Log")
+    )
+    )
+    ), /*#__PURE__*/
+
+    React.createElement("main", { className: "stage" },
+    loadError && /*#__PURE__*/React.createElement("div", { className: "notice error" }, loadError),
+    view.name === "feed" && /*#__PURE__*/React.createElement(FeedPage, { key: feedVersion, client: client, currentUserId: user.id }),
+    view.name === "diary" && /*#__PURE__*/
+    React.createElement(FilmsPage, {
+      entries: entries,
+      entryList: entryList,
+      top5: top5,
+      onChangeTop5: persistTop5,
+      openDetail: (id) => setView({ name: "detail", id }),
+      onLog: () => setLogOpen(true) }
+    ),
+
+    view.name === "detail" && entries[view.id] && /*#__PURE__*/
+    React.createElement(DetailPage, {
+      entry: entries[view.id],
+      tmdb: tmdb,
+      lists: lists,
+      onBack: () => setView({ name: "diary" }),
+      onUpdate: (patch) => updateEntry(view.id, patch),
+      onDelete: () => deleteEntry(view.id),
+      onAddToList: (listId) => {
+        const next = lists.map((l) =>
+        l.id === listId && !l.movieIds.includes(view.id) ?
+        { ...l, movieIds: [...l.movieIds, view.id] } :
+        l
         );
-      }
+        persistLists(next);
+        notify("Added to list.");
+      },
+      notify: notify }
+    ),
 
-      return (
-        <div className="mvd">
-          <StyleTag />
-          <header className="topbar">
-            <div className="topbar-inner">
-              <button className="brand" onClick={() => setView({ name: "feed" })} aria-label="Marquee home">
-                <LogoMark size={26} />
-                <span>MARQUEE</span>
-              </button>
-              <nav className="desktop-nav" aria-label="Main">
-                {NAV_ITEMS.map(({ name, label }) => (
-                  <button
-                    key={name}
-                    className={activeNav === name ? "active" : ""}
-                    aria-current={activeNav === name ? "page" : undefined}
-                    onClick={() => setView({ name })}
-                  >
-                    {label}
-                  </button>
-                ))}
-                <button className="desktop-log" onClick={() => setLogOpen(true)}>Log</button>
-              </nav>
-            </div>
-          </header>
+    view.name === "lists" && /*#__PURE__*/
+    React.createElement(ListsPage, {
+      lists: lists,
+      entries: entries,
+      movieCache: movieCache,
+      onCreate: (name) => persistLists([...lists, { id: uid(), name, movieIds: [] }]),
+      onOpen: (id) => setView({ name: "list", id }),
+      onDelete: (id) => persistLists(lists.filter((l) => l.id !== id)) }
+    ),
 
-          <main className="stage">
-            {loadError && <div className="notice error">{loadError}</div>}
-            {view.name === "feed" && <FeedPage key={feedVersion} client={client} currentUserId={user.id} />}
-            {view.name === "diary" && (
-              <FilmsPage
-                entries={entries}
-                entryList={entryList}
-                top5={top5}
-                onChangeTop5={persistTop5}
-                openDetail={(id) => setView({ name: "detail", id })}
-                onLog={() => setLogOpen(true)}
-              />
-            )}
-            {view.name === "detail" && entries[view.id] && (
-              <DetailPage
-                entry={entries[view.id]}
-                tmdb={tmdb}
-                lists={lists}
-                onBack={() => setView({ name: "diary" })}
-                onUpdate={(patch) => updateEntry(view.id, patch)}
-                onDelete={() => deleteEntry(view.id)}
-                onAddToList={(listId) => {
-                  const next = lists.map((l) =>
-                    l.id === listId && !l.movieIds.includes(view.id)
-                      ? { ...l, movieIds: [...l.movieIds, view.id] }
-                      : l
-                  );
-                  persistLists(next);
-                  notify("Added to list.");
-                }}
-                notify={notify}
-              />
-            )}
-            {view.name === "lists" && (
-              <ListsPage
-            lists={lists}
-            entries={entries}
-            movieCache={movieCache}
-            onCreate={(name) => persistLists([...lists, { id: uid(), name, movieIds: [] }])}
-            onOpen={(id) => setView({ name: "list", id })}
-            onDelete={(id) => persistLists(lists.filter((l) => l.id !== id))}
-          />
-        )}
-        {view.name === "list" && (
-          <ListDetail
-            list={lists.find((l) => l.id === view.id)}
-            entries={entries}
-            movieCache={movieCache}
-            tmdb={tmdb}
-            onCacheMovie={cacheMovie}
-            onBack={() => setView({ name: "lists" })}
-            onOpenMovie={(id) => setView({ name: "detail", id })}
-            onUpdate={(patch) =>
-              persistLists(lists.map((l) => (l.id === view.id ? { ...l, ...patch } : l)))
-            }
-          />
-        )}
-            {view.name === "stats" && <StatsPage entries={entryList} />}
-            {view.name === "settings" && (
-              <SettingsPage
-                apiKey={apiKey}
-                onSave={persistKey}
-                tmdb={tmdb}
-                profile={profile}
-                email={user.email}
-                onSaveProfile={saveProfile}
-                onUploadAvatar={uploadAvatar}
-                onImportLegacy={importLegacyDiary}
-                onSignOut={onSignOut}
-                onOpenStats={() => setView({ name: "stats" })}
-              />
-            )}
-          </main>
+    view.name === "list" && /*#__PURE__*/
+    React.createElement(ListDetail, {
+      list: lists.find((l) => l.id === view.id),
+      entries: entries,
+      movieCache: movieCache,
+      tmdb: tmdb,
+      onCacheMovie: cacheMovie,
+      onBack: () => setView({ name: "lists" }),
+      onOpenMovie: (id) => setView({ name: "detail", id }),
+      onUpdate: (patch) =>
+      persistLists(lists.map((l) => l.id === view.id ? { ...l, ...patch } : l)) }
 
-          <nav className="bottombar" aria-label="Main">
-            {MOBILE_NAV_ITEMS.slice(0, 2).map(({ name, label }) => (
-              <button
-                key={name}
-                className={"tab-link" + (activeNav === name ? " active" : "")}
-                aria-current={activeNav === name ? "page" : undefined}
-                onClick={() => setView({ name })}
-              >
-                <span className="tab-label">{label}</span>
-              </button>
-            ))}
-            <button className="tab-link-log" onClick={() => setLogOpen(true)} aria-label="Log a movie">
-              <span className="tab-link-log-label">Log</span>
-            </button>
-            {MOBILE_NAV_ITEMS.slice(2).map(({ name, label }) => (
-              <button
-                key={name}
-                className={"tab-link" + (activeNav === name ? " active" : "")}
-                aria-current={activeNav === name ? "page" : undefined}
-                onClick={() => setView({ name })}
-              >
-                <span className="tab-label">{label}</span>
-              </button>
-            ))}
-          </nav>
+    ),
 
-          {logOpen && (
-            <LogModal
-              tmdb={tmdb}
-              hasKey={!!apiKey}
-              existing={entries}
-              onClose={() => setLogOpen(false)}
-              onSave={async (entry) => {
-                await addEntry(entry);
-                setLogOpen(false);
-              }}
-              goSettings={() => {
-                setLogOpen(false);
-                setView({ name: "settings" });
-              }}
-            />
-          )}
+    view.name === "stats" && /*#__PURE__*/React.createElement(StatsPage, { entries: entryList }),
+    view.name === "settings" && /*#__PURE__*/
+    React.createElement(SettingsPage, {
+      apiKey: apiKey,
+      onSave: persistKey,
+      tmdb: tmdb,
+      profile: profile,
+      email: user.email,
+      onSaveProfile: saveProfile,
+      onUploadAvatar: uploadAvatar,
+      onImportLegacy: importLegacyDiary,
+      onSignOut: onSignOut,
+      onOpenStats: () => setView({ name: "stats" }) }
+    )
 
-          {toast && <div className="toast" role="status">{toast}</div>}
-        </div>
-      );
-    }
+    ), /*#__PURE__*/
 
-    /* ---------------- diary grid ---------------- */
+    React.createElement("nav", { className: "bottombar", "aria-label": "Main" },
+    MOBILE_NAV_ITEMS.slice(0, 2).map(({ name, label }) => /*#__PURE__*/
+    React.createElement("button", {
+      key: name,
+      className: "tab-link" + (activeNav === name ? " active" : ""),
+      "aria-current": activeNav === name ? "page" : undefined,
+      onClick: () => setView({ name }) }, /*#__PURE__*/
 
-    function Top5Strip({ top5, entries, onChange, onOpenMovie }) {
-      const [pickingSlot, setPickingSlot] = useState(null);
-      const [filter, setFilter] = useState("");
-      const [editing, setEditing] = useState(false);
+    React.createElement("span", { className: "tab-label" }, label)
+    )
+    ), /*#__PURE__*/
+    React.createElement("button", { className: "tab-link-log", onClick: () => setLogOpen(true), "aria-label": "Log a movie" }, /*#__PURE__*/
+    React.createElement("span", { className: "tab-link-log-label" }, "Log")
+    ),
+    MOBILE_NAV_ITEMS.slice(2).map(({ name, label }) => /*#__PURE__*/
+    React.createElement("button", {
+      key: name,
+      className: "tab-link" + (activeNav === name ? " active" : ""),
+      "aria-current": activeNav === name ? "page" : undefined,
+      onClick: () => setView({ name }) }, /*#__PURE__*/
 
-      const candidates = useMemo(
-        () =>
-          Object.values(entries)
-            .filter((e) => e.title.toLowerCase().includes(filter.toLowerCase()))
-            .sort((a, b) => b.rating - a.rating),
-        [entries, filter]
-      );
+    React.createElement("span", { className: "tab-label" }, label)
+    )
+    )
+    ),
 
-      const setSlot = (slot, id) => {
-        const next = top5.map((m) => (m === id ? null : m)); // no duplicates
-        next[slot] = id;
-        onChange(next);
-        setPickingSlot(null);
-        setFilter("");
-      };
+    logOpen && /*#__PURE__*/
+    React.createElement(LogModal, {
+      tmdb: tmdb,
+      hasKey: !!apiKey,
+      existing: entries,
+      onClose: () => setLogOpen(false),
+      onSave: async (entry) => {
+        await addEntry(entry);
+        setLogOpen(false);
+      },
+      goSettings: () => {
+        setLogOpen(false);
+        setView({ name: "settings" });
+      } }
+    ),
 
-      const move = (idx, dir) => {
-        const j = idx + dir;
-        if (j < 0 || j > 4) return;
-        const next = [...top5];
-        [next[idx], next[j]] = [next[j], next[idx]];
-        onChange(next);
-      };
 
-      return (
-        <div className="top5-strip">
-          <div className="top5-head">
-            <div>
-              <div className="eyebrow">Personal ranking</div>
-              <h2>Your Top 5</h2>
-            </div>
-            <button
-              className={"btn-ghost" + (editing ? " active" : "")}
-              onClick={() => setEditing((value) => !value)}
-              aria-pressed={editing}
-            >
-              {editing ? "Done" : "Edit"}
-            </button>
-          </div>
-          <ol className="marquee-board">
-            {top5.map((id, idx) => {
-              const e = id ? entries[id] : null;
-              const p = e ? e.chosenPoster || e.posterPath : null;
-              return (
-                <li className={"marquee-slot" + (e ? " filled" : "")} key={idx}>
-                  <span className="marquee-rank" aria-hidden="true">{String(idx + 1).padStart(2, "0")}</span>
-                  {e ? (
-                    <>
-                      <button className="marquee-poster" onClick={() => onOpenMovie(id)} aria-label={`Open ${e.title}`}>
-                        {p ? <img src={IMG + "w342" + p} alt="" loading="lazy" /> : <div className="poster-blank"><span>{e.title}</span></div>}
-                      </button>
-                      <div className="marquee-title">{e.title}</div>
-                      {editing && (
-                        <div className="rank-controls">
-                          <button className="icon-btn" onClick={() => move(idx, -1)} disabled={idx === 0} aria-label="Move up in ranking">←</button>
-                          <button className="icon-btn" onClick={() => move(idx, 1)} disabled={idx === 4} aria-label="Move down in ranking">→</button>
-                          <button className="btn-ghost" onClick={() => setPickingSlot(idx)} aria-label={`Replace number ${idx + 1}`}>Replace</button>
-                          <button className="icon-btn danger" onClick={() => setSlot(idx, null)} aria-label={`Clear number ${idx + 1}`}>✕</button>
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <button className="marquee-empty" onClick={() => setPickingSlot(idx)} aria-label={`Pick film number ${idx + 1}`}>
-                      <IconPlus />
-                      <span>Pick a film</span>
-                    </button>
-                  )}
-                </li>
-              );
-            })}
-          </ol>
+    toast && /*#__PURE__*/React.createElement("div", { className: "toast", role: "status" }, toast)
+    ));
 
-          {pickingSlot != null && (
-            <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && setPickingSlot(null)}>
-              <div className="modal" role="dialog" aria-modal="true" aria-label={`Pick number ${pickingSlot + 1}`}>
-                <div className="modal-head">
-                  <h2>Choose a film</h2>
-                  <button className="btn-ghost" onClick={() => setPickingSlot(null)} aria-label="Close">✕</button>
-                </div>
-                {Object.keys(entries).length === 0 ? (
-                  <p className="quiet-note">Log some movies first — the Top 5 draws from your films.</p>
-                ) : (
-                  <>
-                    <input
-                      className="search-big"
-                      type="search"
-                      placeholder="Filter your films…"
-                      value={filter}
-                      onChange={(e) => setFilter(e.target.value)}
-                      autoFocus
-                    />
-                    <ul className="results">
-                      {candidates.map((e) => (
-                        <li key={e.id}>
-                          <button className="result" onClick={() => setSlot(pickingSlot, e.id)}>
-                            {(e.chosenPoster || e.posterPath) ? (
-                              <img src={IMG + "w92" + (e.chosenPoster || e.posterPath)} alt="" loading="lazy" />
-                            ) : (
-                              <div className="thumb-blank" />
-                            )}
-                            <span className="result-title">{e.title}</span>
-                            <span className="result-year">{yearOf(e)}</span>
-                            <StarDisplay value={e.rating} size={12} />
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  </>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      );
-    }
+}
 
-    /* ---------------- films page (Top 5 + grid) ---------------- */
+/* ---------------- diary grid ---------------- */
 
-    function FilmsPage({ entries, entryList, top5, onChangeTop5, openDetail, onLog }) {
-      const [tab, setTab] = useState("all"); // 'all' | 'top5'
-      const [sort, setSort] = useState("watched-desc");
-      const [minRating, setMinRating] = useState(0);
-      const [query, setQuery] = useState("");
-      const [searchOpen, setSearchOpen] = useState(false);
-      const searchRef = useRef(null);
+function Top5Strip({ top5, entries, onChange, onOpenMovie }) {
+  const [pickingSlot, setPickingSlot] = useState(null);
+  const [filter, setFilter] = useState("");
+  const [editing, setEditing] = useState(false);
 
-      useEffect(() => {
-        if (searchOpen && searchRef.current) searchRef.current.focus();
-      }, [searchOpen]);
+  const candidates = useMemo(
+    () =>
+    Object.values(entries).
+    filter((e) => e.title.toLowerCase().includes(filter.toLowerCase())).
+    sort((a, b) => b.rating - a.rating),
+    [entries, filter]
+  );
 
-      const shown = useMemo(() => {
-        let list = entryList.filter(
-          (e) => e.rating >= minRating && e.title.toLowerCase().includes(query.toLowerCase())
-        );
-        const by = {
-          "watched-desc": (a, b) => b.watchedDate.localeCompare(a.watchedDate) || b.loggedAt - a.loggedAt,
-          "watched-asc": (a, b) => a.watchedDate.localeCompare(b.watchedDate) || a.loggedAt - b.loggedAt,
-          "rating-desc": (a, b) => b.rating - a.rating,
-          "rating-asc": (a, b) => a.rating - b.rating,
-          "title": (a, b) => a.title.localeCompare(b.title),
-          "year-desc": (a, b) => (b.releaseDate || "").localeCompare(a.releaseDate || ""),
-          "year-asc": (a, b) => (a.releaseDate || "").localeCompare(b.releaseDate || ""),
-        };
-        return [...list].sort(by[sort]);
-      }, [entryList, sort, minRating, query]);
+  const setSlot = (slot, id) => {
+    const next = top5.map((m) => m === id ? null : m); // no duplicates
+    next[slot] = id;
+    onChange(next);
+    setPickingSlot(null);
+    setFilter("");
+  };
 
-      const closeSearch = () => {
-        setQuery("");
-        setSearchOpen(false);
-      };
+  const move = (idx, dir) => {
+    const j = idx + dir;
+    if (j < 0 || j > 4) return;
+    const next = [...top5];
+    [next[idx], next[j]] = [next[j], next[idx]];
+    onChange(next);
+  };
 
-      if (entryList.length === 0) {
-        return (
-          <section>
-            <div className="empty-house">
-              <div className="empty-mark" aria-hidden="true">01</div>
-              <h2>Nothing logged yet</h2>
-              <p>Log the first movie you've watched to start your film archive.</p>
-              <button className="btn-log" onClick={onLog}>+ Log a movie</button>
-            </div>
-          </section>
-        );
-      }
+  return (/*#__PURE__*/
+    React.createElement("div", { className: "top5-strip" }, /*#__PURE__*/
+    React.createElement("div", { className: "top5-head" }, /*#__PURE__*/
+    React.createElement("div", null, /*#__PURE__*/
+    React.createElement("div", { className: "eyebrow" }, "Personal ranking"), /*#__PURE__*/
+    React.createElement("h2", null, "Your Top 5")
+    ), /*#__PURE__*/
+    React.createElement("button", {
+      className: "btn-ghost" + (editing ? " active" : ""),
+      onClick: () => setEditing((value) => !value),
+      "aria-pressed": editing },
 
-      return (
-        <section>
-          <div className="films-head">
-            <h1 className="page-head">Films</h1>
-            <div className="top-tabs" role="tablist" aria-label="Films view">
-              <button
-                role="tab"
-                aria-selected={tab === "all"}
-                className={"top-tab" + (tab === "all" ? " active" : "")}
-                onClick={() => setTab("all")}
-              >
-                Films
-              </button>
-              <button
-                role="tab"
-                aria-selected={tab === "top5"}
-                className={"top-tab" + (tab === "top5" ? " active" : "")}
-                onClick={() => setTab("top5")}
-              >
-                Top 5
-              </button>
-            </div>
-          </div>
+    editing ? "Done" : "Edit"
+    )
+    ), /*#__PURE__*/
+    React.createElement("ol", { className: "marquee-board" },
+    top5.map((id, idx) => {
+      const e = id ? entries[id] : null;
+      const p = e ? e.chosenPoster || e.posterPath : null;
+      return (/*#__PURE__*/
+        React.createElement("li", { className: "marquee-slot" + (e ? " filled" : ""), key: idx }, /*#__PURE__*/
+        React.createElement("span", { className: "marquee-rank", "aria-hidden": "true" }, String(idx + 1).padStart(2, "0")),
+        e ? /*#__PURE__*/
+        React.createElement(React.Fragment, null, /*#__PURE__*/
+        React.createElement("button", { className: "marquee-poster", onClick: () => onOpenMovie(id), "aria-label": `Open ${e.title}` },
+        p ? /*#__PURE__*/React.createElement("img", { src: IMG + "w342" + p, alt: "", loading: "lazy" }) : /*#__PURE__*/React.createElement("div", { className: "poster-blank" }, /*#__PURE__*/React.createElement("span", null, e.title))
+        ), /*#__PURE__*/
+        React.createElement("div", { className: "marquee-title" }, e.title),
+        editing && /*#__PURE__*/
+        React.createElement("div", { className: "rank-controls" }, /*#__PURE__*/
+        React.createElement("button", { className: "icon-btn", onClick: () => move(idx, -1), disabled: idx === 0, "aria-label": "Move up in ranking" }, "←"), /*#__PURE__*/
+        React.createElement("button", { className: "icon-btn", onClick: () => move(idx, 1), disabled: idx === 4, "aria-label": "Move down in ranking" }, "→"), /*#__PURE__*/
+        React.createElement("button", { className: "btn-ghost", onClick: () => setPickingSlot(idx), "aria-label": `Replace number ${idx + 1}` }, "Replace"), /*#__PURE__*/
+        React.createElement("button", { className: "icon-btn danger", onClick: () => setSlot(idx, null), "aria-label": `Clear number ${idx + 1}` }, "✕")
+        )
 
-          {tab === "top5" ? (
-            <Top5Strip top5={top5} entries={entries} onChange={onChangeTop5} onOpenMovie={openDetail} />
-          ) : (
-            <>
-              <div className="controls-collapsed">
-                <select className="pill-select" value={sort} onChange={(e) => setSort(e.target.value)} aria-label="Sort by">
-                  <option value="watched-desc">↕ Newest</option>
-                  <option value="watched-asc">↕ Oldest</option>
-                  <option value="rating-desc">↕ Highest rated</option>
-                  <option value="rating-asc">↕ Lowest rated</option>
-                  <option value="title">↕ Title A–Z</option>
-                  <option value="year-desc">↕ Release year · newest</option>
-                  <option value="year-asc">↕ Release year · oldest</option>
-                </select>
-                <select
-                  className="pill-select"
-                  value={minRating}
-                  onChange={(e) => setMinRating(Number(e.target.value))}
-                  aria-label="Minimum rating"
-                >
-                  <option value={0}>★ Any rating</option>
-                  {[1, 2, 3, 3.5, 4, 4.5, 5].map((r) => (
-                    <option key={r} value={r}>★ {r}+</option>
-                  ))}
-                </select>
+        ) : /*#__PURE__*/
 
-                {searchOpen ? (
-                  <div className="search-expand">
-                    <input
-                      ref={searchRef}
-                      type="search"
-                      placeholder="Search your films…"
-                      value={query}
-                      onChange={(e) => setQuery(e.target.value)}
-                      onBlur={() => { if (!query) setSearchOpen(false); }}
-                    />
-                    <button className="icon-btn" onClick={closeSearch} aria-label="Close search">✕</button>
-                  </div>
-                ) : (
-                  <button className="icon-btn" onClick={() => setSearchOpen(true)} aria-label="Search your films">
-                    <IconSearch />
-                  </button>
-                )}
+        React.createElement("button", { className: "marquee-empty", onClick: () => setPickingSlot(idx), "aria-label": `Pick film number ${idx + 1}` }, /*#__PURE__*/
+        React.createElement(IconPlus, null), /*#__PURE__*/
+        React.createElement("span", null, "Pick a film")
+        )
 
-                <span className="count">{shown.length} of {entryList.length}</span>
-              </div>
+        ));
 
-              <div className="grid">
-                {shown.map((e) => (
-                  <FilmCard key={e.id} entry={e} onOpen={() => openDetail(e.id)} />
-                ))}
-              </div>
-              {shown.length === 0 && <p className="quiet-note">No films match those filters.</p>}
-            </>
-          )}
-        </section>
-      );
-    }
+    })
+    ),
 
-    /* ---------------- friends activity feed ---------------- */
+    pickingSlot != null && /*#__PURE__*/
+    React.createElement("div", { className: "overlay", onMouseDown: (e) => e.target === e.currentTarget && setPickingSlot(null) }, /*#__PURE__*/
+    React.createElement("div", { className: "modal", role: "dialog", "aria-modal": "true", "aria-label": `Pick number ${pickingSlot + 1}` }, /*#__PURE__*/
+    React.createElement("div", { className: "modal-head" }, /*#__PURE__*/
+    React.createElement("h2", null, "Choose a film"), /*#__PURE__*/
+    React.createElement("button", { className: "btn-ghost", onClick: () => setPickingSlot(null), "aria-label": "Close" }, "✕")
+    ),
+    Object.keys(entries).length === 0 ? /*#__PURE__*/
+    React.createElement("p", { className: "quiet-note" }, "Log some movies first — the Top 5 draws from your films.") : /*#__PURE__*/
 
-    function FeedPage({ client, currentUserId }) {
-      const [items, setItems] = useState([]);
-      const [loading, setLoading] = useState(true);
-      const [error, setError] = useState(null);
+    React.createElement(React.Fragment, null, /*#__PURE__*/
+    React.createElement("input", {
+      className: "search-big",
+      type: "search",
+      placeholder: "Filter your films…",
+      value: filter,
+      onChange: (e) => setFilter(e.target.value),
+      autoFocus: true }
+    ), /*#__PURE__*/
+    React.createElement("ul", { className: "results" },
+    candidates.map((e) => /*#__PURE__*/
+    React.createElement("li", { key: e.id }, /*#__PURE__*/
+    React.createElement("button", { className: "result", onClick: () => setSlot(pickingSlot, e.id) },
+    e.chosenPoster || e.posterPath ? /*#__PURE__*/
+    React.createElement("img", { src: IMG + "w92" + (e.chosenPoster || e.posterPath), alt: "", loading: "lazy" }) : /*#__PURE__*/
 
-      const loadFeed = useCallback(async () => {
-        setLoading(true);
-        setError(null);
-        const { data, error: feedError } = await client
-          .from("diary_entries")
-          .select(`
+    React.createElement("div", { className: "thumb-blank" }), /*#__PURE__*/
+
+    React.createElement("span", { className: "result-title" }, e.title), /*#__PURE__*/
+    React.createElement("span", { className: "result-year" }, yearOf(e)), /*#__PURE__*/
+    React.createElement(StarDisplay, { value: e.rating, size: 12 })
+    )
+    )
+    )
+    )
+    )
+
+    )
+    )
+
+    ));
+
+}
+
+/* ---------------- films page (Top 5 + grid) ---------------- */
+
+function FilmsPage({ entries, entryList, top5, onChangeTop5, openDetail, onLog }) {
+  const [tab, setTab] = useState("all"); // 'all' | 'top5'
+  const [sort, setSort] = useState("watched-desc");
+  const [minRating, setMinRating] = useState(0);
+  const [query, setQuery] = useState("");
+  const [searchOpen, setSearchOpen] = useState(false);
+  const searchRef = useRef(null);
+
+  useEffect(() => {
+    if (searchOpen && searchRef.current) searchRef.current.focus();
+  }, [searchOpen]);
+
+  const shown = useMemo(() => {
+    let list = entryList.filter(
+      (e) => e.rating >= minRating && e.title.toLowerCase().includes(query.toLowerCase())
+    );
+    const by = {
+      "watched-desc": (a, b) => b.watchedDate.localeCompare(a.watchedDate) || b.loggedAt - a.loggedAt,
+      "watched-asc": (a, b) => a.watchedDate.localeCompare(b.watchedDate) || a.loggedAt - b.loggedAt,
+      "rating-desc": (a, b) => b.rating - a.rating,
+      "rating-asc": (a, b) => a.rating - b.rating,
+      "title": (a, b) => a.title.localeCompare(b.title),
+      "year-desc": (a, b) => (b.releaseDate || "").localeCompare(a.releaseDate || ""),
+      "year-asc": (a, b) => (a.releaseDate || "").localeCompare(b.releaseDate || "")
+    };
+    return [...list].sort(by[sort]);
+  }, [entryList, sort, minRating, query]);
+
+  const closeSearch = () => {
+    setQuery("");
+    setSearchOpen(false);
+  };
+
+  if (entryList.length === 0) {
+    return (/*#__PURE__*/
+      React.createElement("section", null, /*#__PURE__*/
+      React.createElement("div", { className: "empty-house" }, /*#__PURE__*/
+      React.createElement("div", { className: "empty-mark", "aria-hidden": "true" }, "01"), /*#__PURE__*/
+      React.createElement("h2", null, "Nothing logged yet"), /*#__PURE__*/
+      React.createElement("p", null, "Log the first movie you've watched to start your film archive."), /*#__PURE__*/
+      React.createElement("button", { className: "btn-log", onClick: onLog }, "+ Log a movie")
+      )
+      ));
+
+  }
+
+  return (/*#__PURE__*/
+    React.createElement("section", null, /*#__PURE__*/
+    React.createElement("div", { className: "films-head" }, /*#__PURE__*/
+    React.createElement("h1", { className: "page-head" }, "Films"), /*#__PURE__*/
+    React.createElement("div", { className: "top-tabs", role: "tablist", "aria-label": "Films view" }, /*#__PURE__*/
+    React.createElement("button", {
+      role: "tab",
+      "aria-selected": tab === "all",
+      className: "top-tab" + (tab === "all" ? " active" : ""),
+      onClick: () => setTab("all") },
+    "Films"
+
+    ), /*#__PURE__*/
+    React.createElement("button", {
+      role: "tab",
+      "aria-selected": tab === "top5",
+      className: "top-tab" + (tab === "top5" ? " active" : ""),
+      onClick: () => setTab("top5") },
+    "Top 5"
+
+    )
+    )
+    ),
+
+    tab === "top5" ? /*#__PURE__*/
+    React.createElement(Top5Strip, { top5: top5, entries: entries, onChange: onChangeTop5, onOpenMovie: openDetail }) : /*#__PURE__*/
+
+    React.createElement(React.Fragment, null, /*#__PURE__*/
+    React.createElement("div", { className: "controls-collapsed" }, /*#__PURE__*/
+    React.createElement("select", { className: "pill-select", value: sort, onChange: (e) => setSort(e.target.value), "aria-label": "Sort by" }, /*#__PURE__*/
+    React.createElement("option", { value: "watched-desc" }, "Newest"), /*#__PURE__*/
+    React.createElement("option", { value: "watched-asc" }, "Oldest"), /*#__PURE__*/
+    React.createElement("option", { value: "rating-desc" }, "Highest rated"), /*#__PURE__*/
+    React.createElement("option", { value: "rating-asc" }, "Lowest rated"), /*#__PURE__*/
+    React.createElement("option", { value: "title" }, "Title A–Z"), /*#__PURE__*/
+    React.createElement("option", { value: "year-desc" }, "Release year: newest"), /*#__PURE__*/
+    React.createElement("option", { value: "year-asc" }, "Release year: oldest")
+    ), /*#__PURE__*/
+    React.createElement("select", {
+      className: "pill-select",
+      value: minRating,
+      onChange: (e) => setMinRating(Number(e.target.value)),
+      "aria-label": "Minimum rating" }, /*#__PURE__*/
+
+    React.createElement("option", { value: 0 }, "Any rating"),
+    [1, 2, 3, 3.5, 4, 4.5, 5].map((r) => /*#__PURE__*/
+    React.createElement("option", { key: r, value: r }, r, "+ rating")
+    )
+    ),
+
+    searchOpen ? /*#__PURE__*/
+    React.createElement("div", { className: "search-expand" }, /*#__PURE__*/
+    React.createElement("input", {
+      ref: searchRef,
+      type: "search",
+      placeholder: "Search your films…",
+      value: query,
+      onChange: (e) => setQuery(e.target.value),
+      onBlur: () => {if (!query) setSearchOpen(false);} }
+    ), /*#__PURE__*/
+    React.createElement("button", { className: "icon-btn", onClick: closeSearch, "aria-label": "Close search" }, "✕")
+    ) : /*#__PURE__*/
+
+    React.createElement("button", { className: "icon-btn", onClick: () => setSearchOpen(true), "aria-label": "Search your films" }, /*#__PURE__*/
+    React.createElement(IconSearch, null)
+    ), /*#__PURE__*/
+
+
+    React.createElement("span", { className: "count" }, shown.length, " of ", entryList.length)
+    ), /*#__PURE__*/
+
+    React.createElement("div", { className: "grid" },
+    shown.map((e) => /*#__PURE__*/
+    React.createElement(FilmCard, { key: e.id, entry: e, onOpen: () => openDetail(e.id) })
+    )
+    ),
+    shown.length === 0 && /*#__PURE__*/React.createElement("p", { className: "quiet-note" }, "No films match those filters.")
+    )
+
+    ));
+
+}
+
+/* ---------------- friends activity feed ---------------- */
+
+function FeedPage({ client, currentUserId }) {
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+
+  const loadFeed = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    const { data, error: feedError } = await client.
+    from("diary_entries").
+    select(`
             *,
             profiles!diary_entries_user_id_fkey (
               username,
               display_name,
               avatar_url
             )
-          `)
-          .order("logged_at", { ascending: false })
-          .limit(60);
-        if (feedError) setError(feedError.message);
-        else setItems(data || []);
-        setLoading(false);
-      }, [client]);
+          `).
+    order("logged_at", { ascending: false }).
+    limit(60);
+    if (feedError) setError(feedError.message);else
+    setItems(data || []);
+    setLoading(false);
+  }, [client]);
 
-      useEffect(() => { loadFeed(); }, [loadFeed]);
+  useEffect(() => {loadFeed();}, [loadFeed]);
 
-      return (
-        <section>
-          <div className="feed-head">
-            <div>
-              <div className="eyebrow">Friends activity</div>
-              <h1 className="page-head">Feed</h1>
-            </div>
-            <button className="btn-ghost" onClick={loadFeed} disabled={loading}>
-              {loading ? "Refreshing…" : "Refresh"}
-            </button>
-          </div>
+  return (/*#__PURE__*/
+    React.createElement("section", null, /*#__PURE__*/
+    React.createElement("div", { className: "feed-head" }, /*#__PURE__*/
+    React.createElement("div", null, /*#__PURE__*/
+    React.createElement("div", { className: "eyebrow" }, "Friends activity"), /*#__PURE__*/
+    React.createElement("h1", { className: "page-head" }, "Feed")
+    ), /*#__PURE__*/
+    React.createElement("button", { className: "btn-ghost", onClick: loadFeed, disabled: loading },
+    loading ? "Refreshing…" : "Refresh"
+    )
+    ),
 
-          {error && <div className="notice error">Couldn't load the feed: {error}</div>}
-          {!loading && !error && items.length === 0 && (
-            <div className="empty-house feed-empty">
-              <div className="empty-mark">01</div>
-              <h2>The feed is quiet</h2>
-              <p>Activity will appear here when you or a friend logs a film.</p>
-            </div>
-          )}
+    error && /*#__PURE__*/React.createElement("div", { className: "notice error" }, "Couldn't load the feed: ", error),
+    !loading && !error && items.length === 0 && /*#__PURE__*/
+    React.createElement("div", { className: "empty-house feed-empty" }, /*#__PURE__*/
+    React.createElement("div", { className: "empty-mark" }, "01"), /*#__PURE__*/
+    React.createElement("h2", null, "The feed is quiet"), /*#__PURE__*/
+    React.createElement("p", null, "Activity will appear here when you or a friend logs a film.")
+    ), /*#__PURE__*/
 
-          <div className="feed-list">
-            {items.map((item) => {
-              const person = item.profiles || {};
-              const poster = item.chosen_poster || item.poster_path;
-              return (
-                <article className="feed-entry" key={item.id}>
-                  <div className="feed-person">
-                    <div className={"avatar" + (person.avatar_url ? " has-image" : "")} aria-hidden="true">
-                      {person.avatar_url
-                        ? <img src={person.avatar_url} alt="" loading="lazy" />
-                        : (person.display_name || person.username || "?").slice(0, 1).toUpperCase()}
-                    </div>
-                    <div>
-                      <div className="feed-name">
-                        {person.display_name || person.username || "Marquee user"}
-                        {item.user_id === currentUserId && <span className="you-tag">You</span>}
-                      </div>
-                      <div className="feed-action">logged a film · {fmtDate(item.watched_date)}</div>
-                    </div>
-                  </div>
-                  <div className="feed-content">
-                    <div className="feed-poster">
-                      {poster ? <img src={IMG + "w185" + poster} alt="" loading="lazy" /> : <div className="poster-blank" />}
-                    </div>
-                    <div className="feed-copy">
-                      <h2>{item.title} <span>{item.release_date ? item.release_date.slice(0, 4) : ""}</span></h2>
-                      <StarDisplay value={Number(item.rating)} size={15} />
-                      {item.review ? <p>{item.review}</p> : <p className="quiet-note">No written review.</p>}
-                    </div>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
-        </section>
-      );
+
+    React.createElement("div", { className: "feed-list" },
+    items.map((item) => {
+      const person = item.profiles || {};
+      const poster = item.chosen_poster || item.poster_path;
+      return (/*#__PURE__*/
+        React.createElement("article", { className: "feed-entry", key: item.id }, /*#__PURE__*/
+        React.createElement("div", { className: "feed-person" }, /*#__PURE__*/
+        React.createElement("div", { className: "avatar" + (person.avatar_url ? " has-image" : ""), "aria-hidden": "true" },
+        person.avatar_url ? /*#__PURE__*/
+        React.createElement("img", { src: person.avatar_url, alt: "", loading: "lazy" }) :
+        (person.display_name || person.username || "?").slice(0, 1).toUpperCase()
+        ), /*#__PURE__*/
+        React.createElement("div", null, /*#__PURE__*/
+        React.createElement("div", { className: "feed-name" },
+        person.display_name || person.username || "Marquee user",
+        item.user_id === currentUserId && /*#__PURE__*/React.createElement("span", { className: "you-tag" }, "You")
+        ), /*#__PURE__*/
+        React.createElement("div", { className: "feed-action" }, "logged a film · ", fmtDate(item.watched_date))
+        )
+        ), /*#__PURE__*/
+        React.createElement("div", { className: "feed-content" }, /*#__PURE__*/
+        React.createElement("div", { className: "feed-poster" },
+        poster ? /*#__PURE__*/React.createElement("img", { src: IMG + "w185" + poster, alt: "", loading: "lazy" }) : /*#__PURE__*/React.createElement("div", { className: "poster-blank" })
+        ), /*#__PURE__*/
+        React.createElement("div", { className: "feed-copy" }, /*#__PURE__*/
+        React.createElement("h2", null, item.title, " ", /*#__PURE__*/React.createElement("span", null, item.release_date ? item.release_date.slice(0, 4) : "")), /*#__PURE__*/
+        React.createElement(StarDisplay, { value: Number(item.rating), size: 15 }),
+        item.review ? /*#__PURE__*/React.createElement("p", null, item.review) : /*#__PURE__*/React.createElement("p", { className: "quiet-note" }, "No written review.")
+        )
+        )
+        ));
+
+    })
+    )
+    ));
+
+}
+
+/* ---------------- log modal (search + form) ---------------- */
+
+function LogModal({ tmdb, hasKey, existing, onClose, onSave, goSettings }) {
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [error, setError] = useState(null);
+  const [picked, setPicked] = useState(null); // TMDB movie object
+  const [selectedPoster, setSelectedPoster] = useState(null);
+  const [posters, setPosters] = useState(null); // null = not loaded
+  const [postersError, setPostersError] = useState(null);
+  const [loadingPosters, setLoadingPosters] = useState(false);
+  const [rating, setRating] = useState(0);
+  const [watchedDate, setWatchedDate] = useState(todayISO());
+  const [review, setReview] = useState("");
+  const inputRef = useRef(null);
+  const timer = useRef(null);
+
+  useEffect(() => {
+    inputRef.current && inputRef.current.focus();
+  }, []);
+
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  useEffect(() => {
+    window.clearTimeout(timer.current);
+    if (!query.trim()) {
+      setResults([]);
+      setError(null);
+      return;
     }
+    timer.current = window.setTimeout(async () => {
+      setSearching(true);
+      setError(null);
+      try {
+        const data = await tmdb("/search/movie", { query: query.trim(), include_adult: "false" });
+        setResults((data.results || []).slice(0, 12));
+      } catch (err) {
+        setError(friendlyError(err));
+        setResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 400);
+    return () => window.clearTimeout(timer.current);
+  }, [query, tmdb]);
 
-    /* ---------------- log modal (search + form) ---------------- */
+  const loadPosters = async () => {
+    setLoadingPosters(true);
+    setPostersError(null);
+    try {
+      const data = await tmdb("/movie/" + picked.id + "/images", {});
+      const sorted = (data.posters || []).sort((a, b) => b.vote_count - a.vote_count);
+      setPosters(sorted);
+    } catch (err) {
+      setPostersError(friendlyError(err));
+    } finally {
+      setLoadingPosters(false);
+    }
+  };
 
-    function LogModal({ tmdb, hasKey, existing, onClose, onSave, goSettings }) {
-      const [query, setQuery] = useState("");
-      const [results, setResults] = useState([]);
-      const [searching, setSearching] = useState(false);
-      const [error, setError] = useState(null);
-      const [picked, setPicked] = useState(null); // TMDB movie object
-      const [selectedPoster, setSelectedPoster] = useState(null);
-      const [posters, setPosters] = useState(null); // null = not loaded
-      const [postersError, setPostersError] = useState(null);
-      const [loadingPosters, setLoadingPosters] = useState(false);
-      const [rating, setRating] = useState(0);
-      const [watchedDate, setWatchedDate] = useState(todayISO());
-      const [review, setReview] = useState("");
-      const inputRef = useRef(null);
-      const timer = useRef(null);
+  const save = async () => {
+    if (!picked || !rating) return;
+    let genres = [];
+    let runtime = null;
+    try {
+      const detail = await tmdb("/movie/" + picked.id, {});
+      genres = (detail.genres || []).map((g) => g.name);
+      runtime = detail.runtime || null;
+    } catch (e) {
 
-      useEffect(() => {
-        inputRef.current && inputRef.current.focus();
-      }, []);
+      /* not critical — log without genre data */}
+    onSave({
+      id: String(picked.id),
+      title: picked.title,
+      releaseDate: picked.release_date || "",
+      posterPath: selectedPoster || picked.poster_path || null,
+      chosenPoster: null,
+      rating,
+      review: review.trim(),
+      watchedDate,
+      genres,
+      runtime,
+      loggedAt: Date.now()
+    });
+  };
 
-      useEffect(() => {
-        const onKey = (e) => e.key === "Escape" && onClose();
-        window.addEventListener("keydown", onKey);
-        return () => window.removeEventListener("keydown", onKey);
-      }, [onClose]);
+  return (/*#__PURE__*/
+    React.createElement("div", { className: "overlay", onMouseDown: (e) => e.target === e.currentTarget && onClose() }, /*#__PURE__*/
+    React.createElement("div", { className: "modal", role: "dialog", "aria-modal": "true", "aria-label": "Log a movie" }, /*#__PURE__*/
+    React.createElement("div", { className: "modal-head" }, /*#__PURE__*/
+    React.createElement("h2", null, picked ? "Movie details" : "Log a movie"), /*#__PURE__*/
+    React.createElement("button", { className: "btn-ghost", onClick: onClose, "aria-label": "Close" }, "✕")
+    ),
 
-      useEffect(() => {
-        window.clearTimeout(timer.current);
-        if (!query.trim()) {
-          setResults([]);
-          setError(null);
-          return;
-        }
-        timer.current = window.setTimeout(async () => {
-          setSearching(true);
-          setError(null);
-          try {
-            const data = await tmdb("/search/movie", { query: query.trim(), include_adult: "false" });
-            setResults((data.results || []).slice(0, 12));
-          } catch (err) {
-            setError(friendlyError(err));
-            setResults([]);
-          } finally {
-            setSearching(false);
-          }
-        }, 400);
-        return () => window.clearTimeout(timer.current);
-      }, [query, tmdb]);
+    !hasKey && /*#__PURE__*/
+    React.createElement("div", { className: "notice" }, "You'll need a TMDB API key before searching.",
+    " ", /*#__PURE__*/
+    React.createElement("button", { className: "link", onClick: goSettings }, "Open Settings")
+    ),
 
-      const loadPosters = async () => {
-        setLoadingPosters(true);
+
+    !picked && /*#__PURE__*/
+    React.createElement(React.Fragment, null, /*#__PURE__*/
+    React.createElement("input", {
+      ref: inputRef,
+      className: "search-big",
+      type: "search",
+      placeholder: "Search TMDB by title…",
+      value: query,
+      onChange: (e) => setQuery(e.target.value),
+      disabled: !hasKey }
+    ),
+    error && /*#__PURE__*/React.createElement("div", { className: "notice error" }, error),
+    searching && /*#__PURE__*/React.createElement("div", { className: "quiet-note" }, "Searching…"), /*#__PURE__*/
+    React.createElement("ul", { className: "results" },
+    results.map((m) => /*#__PURE__*/
+    React.createElement("li", { key: m.id }, /*#__PURE__*/
+    React.createElement("button", {
+      className: "result",
+      onClick: () => {
+        setPicked(m);
+        setSelectedPoster(null);
+        setPosters(null);
         setPostersError(null);
-        try {
-          const data = await tmdb("/movie/" + picked.id + "/images", {});
-          const sorted = (data.posters || []).sort((a, b) => b.vote_count - a.vote_count);
-          setPosters(sorted);
-        } catch (err) {
-          setPostersError(friendlyError(err));
-        } finally {
-          setLoadingPosters(false);
-        }
-      };
+      } },
 
-      const save = async () => {
-        if (!picked || !rating) return;
-        let genres = [];
-        let runtime = null;
-        try {
-          const detail = await tmdb("/movie/" + picked.id, {});
-          genres = (detail.genres || []).map((g) => g.name);
-          runtime = detail.runtime || null;
-        } catch (e) {
-          /* not critical — log without genre data */
-        }
-        onSave({
-          id: String(picked.id),
-          title: picked.title,
-          releaseDate: picked.release_date || "",
-          posterPath: selectedPoster || picked.poster_path || null,
-          chosenPoster: null,
-          rating,
-          review: review.trim(),
-          watchedDate,
-          genres,
-          runtime,
-          loggedAt: Date.now(),
-        });
-      };
+    m.poster_path ? /*#__PURE__*/
+    React.createElement("img", { src: IMG + "w92" + m.poster_path, alt: "", loading: "lazy" }) : /*#__PURE__*/
 
-      return (
-        <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-          <div className="modal" role="dialog" aria-modal="true" aria-label="Log a movie">
-            <div className="modal-head">
-              <h2>{picked ? "Movie details" : "Log a movie"}</h2>
-              <button className="btn-ghost" onClick={onClose} aria-label="Close">✕</button>
-            </div>
+    React.createElement("div", { className: "thumb-blank", "aria-hidden": "true" }), /*#__PURE__*/
 
-            {!hasKey && (
-              <div className="notice">
-                You'll need a TMDB API key before searching.{" "}
-                <button className="link" onClick={goSettings}>Open Settings</button>
-              </div>
-            )}
+    React.createElement("span", { className: "result-title" }, m.title), /*#__PURE__*/
+    React.createElement("span", { className: "result-year" }, m.release_date ? m.release_date.slice(0, 4) : ""),
+    existing[String(m.id)] && /*#__PURE__*/React.createElement("span", { className: "result-flag" }, "already logged")
+    )
+    )
+    )
+    ),
+    !searching && query && results.length === 0 && !error && hasKey && /*#__PURE__*/
+    React.createElement("p", { className: "quiet-note" }, "No matches. Check the spelling or try a shorter title.")
 
-            {!picked && (
-              <>
-                <input
-                  ref={inputRef}
-                  className="search-big"
-                  type="search"
-                  placeholder="Search TMDB by title…"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  disabled={!hasKey}
-                />
-                {error && <div className="notice error">{error}</div>}
-                {searching && <div className="quiet-note">Searching…</div>}
-                <ul className="results">
-                  {results.map((m) => (
-                    <li key={m.id}>
-                      <button
-                        className="result"
-                        onClick={() => {
-                          setPicked(m);
-                          setSelectedPoster(null);
-                          setPosters(null);
-                          setPostersError(null);
-                        }}
-                      >
-                        {m.poster_path ? (
-                          <img src={IMG + "w92" + m.poster_path} alt="" loading="lazy" />
-                        ) : (
-                          <div className="thumb-blank" aria-hidden="true" />
-                        )}
-                        <span className="result-title">{m.title}</span>
-                        <span className="result-year">{m.release_date ? m.release_date.slice(0, 4) : ""}</span>
-                        {existing[String(m.id)] && <span className="result-flag">already logged</span>}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-                {!searching && query && results.length === 0 && !error && hasKey && (
-                  <p className="quiet-note">No matches. Check the spelling or try a shorter title.</p>
-                )}
-              </>
-            )}
+    ),
 
-            {picked && (
-              <>
-                <div className="log-form">
-                  <div className="log-form-poster">
-                    {(selectedPoster || picked.poster_path) ? (
-                      <img src={IMG + "w342" + (selectedPoster || picked.poster_path)} alt={picked.title + " poster"} />
-                    ) : (
-                      <div className="poster-blank"><span>{picked.title}</span></div>
-                    )}
-                    {posters === null && !loadingPosters && !postersError && (
-                      <button className="btn-ghost poster-change-btn" onClick={loadPosters}>Change poster</button>
-                    )}
-                    {loadingPosters && <p className="quiet-note">Loading posters…</p>}
-                    {postersError && (
-                      <div className="notice error">
-                        {postersError} <button className="link" onClick={loadPosters}>Retry</button>
-                      </div>
-                    )}
-                  </div>
-                  <div className="log-form-fields">
-                    <h3 className="film-title">{picked.title}
-                      <span className="film-year"> {picked.release_date ? picked.release_date.slice(0, 4) : ""}</span>
-                    </h3>
-                    <FilmFacts tmdb={tmdb} movieId={picked.id} overview={picked.overview} />
-                    <label className="field">
-                      <span>Watched on</span>
-                      <input type="date" value={watchedDate} max={todayISO()} onChange={(e) => setWatchedDate(e.target.value)} />
-                    </label>
-                    <div className="field">
-                      <span>Your rating</span>
-                      <StarInput value={rating} onChange={setRating} />
-                    </div>
-                    <label className="field">
-                      <span>Review <em>(optional)</em></span>
-                      <textarea
-                        rows={5}
-                        placeholder="What stuck with you?"
-                        value={review}
-                        onChange={(e) => setReview(e.target.value)}
-                      />
-                    </label>
-                    <div className="row-end">
-                      <button className="btn-ghost" onClick={() => setPicked(null)}>← Back to search</button>
-                      <button className="btn-log" disabled={!rating} onClick={save}>
-                        {rating ? "Add to films" : "Pick a rating first"}
-                      </button>
-                    </div>
-                  </div>
-                </div>
 
-                {posters && posters.length > 0 && (
-                  <div className="poster-picker">
-                    <p className="quiet-note">{posters.length} posters · click one to use it</p>
-                    <div className="poster-grid">
-                      {posters.map((p) => {
-                        const active = (selectedPoster || picked.poster_path) === p.file_path;
-                        return (
-                          <button
-                            key={p.file_path}
-                            className={"poster-option" + (active ? " active" : "")}
-                            onClick={() => setSelectedPoster(p.file_path)}
-                            aria-label={`Use ${p.iso_639_1 ? p.iso_639_1.toUpperCase() : "textless"} poster`}
-                            aria-pressed={active}
-                          >
-                            <img src={IMG + "w185" + p.file_path} alt="" loading="lazy" />
-                            <span className="poster-lang">{p.iso_639_1 ? p.iso_639_1.toUpperCase() : "—"}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-                {posters && posters.length === 0 && (
-                  <p className="quiet-note">TMDB has no alternate posters for this one.</p>
-                )}
-              </>
-            )}
-          </div>
-        </div>
-      );
+    picked && /*#__PURE__*/
+    React.createElement(React.Fragment, null, /*#__PURE__*/
+    React.createElement("div", { className: "log-form" }, /*#__PURE__*/
+    React.createElement("div", { className: "log-form-poster" },
+    selectedPoster || picked.poster_path ? /*#__PURE__*/
+    React.createElement("img", { src: IMG + "w342" + (selectedPoster || picked.poster_path), alt: picked.title + " poster" }) : /*#__PURE__*/
+
+    React.createElement("div", { className: "poster-blank" }, /*#__PURE__*/React.createElement("span", null, picked.title)),
+
+    posters === null && !loadingPosters && !postersError && /*#__PURE__*/
+    React.createElement("button", { className: "btn-ghost poster-change-btn", onClick: loadPosters }, "Change poster"),
+
+    loadingPosters && /*#__PURE__*/React.createElement("p", { className: "quiet-note" }, "Loading posters…"),
+    postersError && /*#__PURE__*/
+    React.createElement("div", { className: "notice error" },
+    postersError, " ", /*#__PURE__*/React.createElement("button", { className: "link", onClick: loadPosters }, "Retry")
+    )
+
+    ), /*#__PURE__*/
+    React.createElement("div", { className: "log-form-fields" }, /*#__PURE__*/
+    React.createElement("h3", { className: "film-title" }, picked.title, /*#__PURE__*/
+    React.createElement("span", { className: "film-year" }, " ", picked.release_date ? picked.release_date.slice(0, 4) : "")
+    ), /*#__PURE__*/
+    React.createElement(FilmFacts, { tmdb: tmdb, movieId: picked.id, overview: picked.overview }), /*#__PURE__*/
+    React.createElement("label", { className: "field" }, /*#__PURE__*/
+    React.createElement("span", null, "Watched on"), /*#__PURE__*/
+    React.createElement("input", { type: "date", value: watchedDate, max: todayISO(), onChange: (e) => setWatchedDate(e.target.value) })
+    ), /*#__PURE__*/
+    React.createElement("div", { className: "field" }, /*#__PURE__*/
+    React.createElement("span", null, "Your rating"), /*#__PURE__*/
+    React.createElement(StarInput, { value: rating, onChange: setRating })
+    ), /*#__PURE__*/
+    React.createElement("label", { className: "field" }, /*#__PURE__*/
+    React.createElement("span", null, "Review ", /*#__PURE__*/React.createElement("em", null, "(optional)")), /*#__PURE__*/
+    React.createElement("textarea", {
+      rows: 5,
+      placeholder: "What stuck with you?",
+      value: review,
+      onChange: (e) => setReview(e.target.value) }
+    )
+    ), /*#__PURE__*/
+    React.createElement("div", { className: "row-end" }, /*#__PURE__*/
+    React.createElement("button", { className: "btn-ghost", onClick: () => setPicked(null) }, "← Back to search"), /*#__PURE__*/
+    React.createElement("button", { className: "btn-log", disabled: !rating, onClick: save },
+    rating ? "Add to films" : "Pick a rating first"
+    )
+    )
+    )
+    ),
+
+    posters && posters.length > 0 && /*#__PURE__*/
+    React.createElement("div", { className: "poster-picker" }, /*#__PURE__*/
+    React.createElement("p", { className: "quiet-note" }, posters.length, " posters · click one to use it"), /*#__PURE__*/
+    React.createElement("div", { className: "poster-grid" },
+    posters.map((p) => {
+      const active = (selectedPoster || picked.poster_path) === p.file_path;
+      return (/*#__PURE__*/
+        React.createElement("button", {
+          key: p.file_path,
+          className: "poster-option" + (active ? " active" : ""),
+          onClick: () => setSelectedPoster(p.file_path),
+          "aria-label": `Use ${p.iso_639_1 ? p.iso_639_1.toUpperCase() : "textless"} poster`,
+          "aria-pressed": active }, /*#__PURE__*/
+
+        React.createElement("img", { src: IMG + "w185" + p.file_path, alt: "", loading: "lazy" }), /*#__PURE__*/
+        React.createElement("span", { className: "poster-lang" }, p.iso_639_1 ? p.iso_639_1.toUpperCase() : "—")
+        ));
+
+    })
+    )
+    ),
+
+    posters && posters.length === 0 && /*#__PURE__*/
+    React.createElement("p", { className: "quiet-note" }, "TMDB has no alternate posters for this one.")
+
+    )
+
+    )
+    ));
+
+}
+
+/* ---------------- detail page ---------------- */
+
+function DetailPage({ entry, tmdb, lists, onBack, onUpdate, onDelete, onAddToList, notify }) {
+  const [editingReview, setEditingReview] = useState(false);
+  const [reviewDraft, setReviewDraft] = useState(entry.review);
+  const [posters, setPosters] = useState(null); // null = not loaded
+  const [postersError, setPostersError] = useState(null);
+  const [loadingPosters, setLoadingPosters] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [listPick, setListPick] = useState("");
+
+  const poster = entry.chosenPoster || entry.posterPath;
+
+  const loadPosters = async () => {
+    setLoadingPosters(true);
+    setPostersError(null);
+    try {
+      const data = await tmdb("/movie/" + entry.id + "/images", {});
+      const sorted = (data.posters || []).sort((a, b) => b.vote_count - a.vote_count);
+      setPosters(sorted);
+    } catch (err) {
+      setPostersError(friendlyError(err));
+    } finally {
+      setLoadingPosters(false);
     }
+  };
 
-    /* ---------------- detail page ---------------- */
+  return (/*#__PURE__*/
+    React.createElement("section", { className: "detail" }, /*#__PURE__*/
+    React.createElement("button", { className: "btn-ghost back", onClick: onBack }, "← Films"), /*#__PURE__*/
 
-    function DetailPage({ entry, tmdb, lists, onBack, onUpdate, onDelete, onAddToList, notify }) {
-      const [editingReview, setEditingReview] = useState(false);
-      const [reviewDraft, setReviewDraft] = useState(entry.review);
-      const [posters, setPosters] = useState(null); // null = not loaded
-      const [postersError, setPostersError] = useState(null);
-      const [loadingPosters, setLoadingPosters] = useState(false);
-      const [confirmDelete, setConfirmDelete] = useState(false);
-      const [listPick, setListPick] = useState("");
+    React.createElement("div", { className: "detail-main" }, /*#__PURE__*/
+    React.createElement("div", { className: "detail-poster" },
+    poster ? /*#__PURE__*/
+    React.createElement("img", { src: IMG + "w500" + poster, alt: entry.title + " poster" }) : /*#__PURE__*/
 
-      const poster = entry.chosenPoster || entry.posterPath;
+    React.createElement("div", { className: "poster-blank tall" }, /*#__PURE__*/React.createElement("span", null, entry.title))
 
-      const loadPosters = async () => {
-        setLoadingPosters(true);
-        setPostersError(null);
-        try {
-          const data = await tmdb("/movie/" + entry.id + "/images", {});
-          const sorted = (data.posters || []).sort((a, b) => b.vote_count - a.vote_count);
-          setPosters(sorted);
-        } catch (err) {
-          setPostersError(friendlyError(err));
-        } finally {
-          setLoadingPosters(false);
-        }
-      };
+    ), /*#__PURE__*/
 
-      return (
-        <section className="detail">
-          <button className="btn-ghost back" onClick={onBack}>← Films</button>
+    React.createElement("div", { className: "detail-info" }, /*#__PURE__*/
+    React.createElement("h1", { className: "film-title big" }, entry.title, /*#__PURE__*/
+    React.createElement("span", { className: "film-year" }, " ", yearOf(entry))
+    ), /*#__PURE__*/
+    React.createElement("div", { className: "detail-facts" },
+    entry.genres && entry.genres.length > 0 && /*#__PURE__*/React.createElement("span", null, entry.genres.join(" · ")),
+    entry.runtime && /*#__PURE__*/React.createElement("span", null, entry.runtime, " min")
+    ), /*#__PURE__*/
+    React.createElement(FilmFacts, { tmdb: tmdb, movieId: entry.id }), /*#__PURE__*/
 
-          <div className="detail-main">
-            <div className="detail-poster">
-              {poster ? (
-                <img src={IMG + "w500" + poster} alt={entry.title + " poster"} />
-              ) : (
-                <div className="poster-blank tall"><span>{entry.title}</span></div>
-              )}
-            </div>
+    React.createElement("div", { className: "field" }, /*#__PURE__*/
+    React.createElement("span", null, "Your rating"), /*#__PURE__*/
+    React.createElement(StarInput, { value: entry.rating, onChange: (r) => onUpdate({ rating: r }) })
+    ), /*#__PURE__*/
 
-            <div className="detail-info">
-              <h1 className="film-title big">{entry.title}
-                <span className="film-year"> {yearOf(entry)}</span>
-              </h1>
-              <div className="detail-facts">
-                {entry.genres && entry.genres.length > 0 && <span>{entry.genres.join(" · ")}</span>}
-                {entry.runtime && <span>{entry.runtime} min</span>}
-              </div>
-              <FilmFacts tmdb={tmdb} movieId={entry.id} />
+    React.createElement("label", { className: "field" }, /*#__PURE__*/
+    React.createElement("span", null, "Watched on"), /*#__PURE__*/
+    React.createElement("input", {
+      type: "date",
+      value: entry.watchedDate,
+      max: todayISO(),
+      onChange: (e) => onUpdate({ watchedDate: e.target.value }) }
+    )
+    ), /*#__PURE__*/
 
-              <div className="field">
-                <span>Your rating</span>
-                <StarInput value={entry.rating} onChange={(r) => onUpdate({ rating: r })} />
-              </div>
+    React.createElement("div", { className: "field" }, /*#__PURE__*/
+    React.createElement("span", null, "Review"),
+    editingReview ? /*#__PURE__*/
+    React.createElement(React.Fragment, null, /*#__PURE__*/
+    React.createElement("textarea", { rows: 6, value: reviewDraft, onChange: (e) => setReviewDraft(e.target.value) }), /*#__PURE__*/
+    React.createElement("div", { className: "row-end" }, /*#__PURE__*/
+    React.createElement("button", { className: "btn-ghost", onClick: () => {setReviewDraft(entry.review);setEditingReview(false);} }, "Cancel"), /*#__PURE__*/
+    React.createElement("button", { className: "btn-log", onClick: () => {onUpdate({ review: reviewDraft.trim() });setEditingReview(false);} }, "Save review")
+    )
+    ) : /*#__PURE__*/
 
-              <label className="field">
-                <span>Watched on</span>
-                <input
-                  type="date"
-                  value={entry.watchedDate}
-                  max={todayISO()}
-                  onChange={(e) => onUpdate({ watchedDate: e.target.value })}
-                />
-              </label>
+    React.createElement(React.Fragment, null,
+    entry.review ? /*#__PURE__*/React.createElement("p", { className: "review-text" }, entry.review) : /*#__PURE__*/React.createElement("p", { className: "quiet-note" }, "No review yet."), /*#__PURE__*/
+    React.createElement("button", { className: "btn-ghost", onClick: () => {setReviewDraft(entry.review);setEditingReview(true);} },
+    entry.review ? "Edit review" : "Write a review"
+    )
+    )
 
-              <div className="field">
-                <span>Review</span>
-                {editingReview ? (
-                  <>
-                    <textarea rows={6} value={reviewDraft} onChange={(e) => setReviewDraft(e.target.value)} />
-                    <div className="row-end">
-                      <button className="btn-ghost" onClick={() => { setReviewDraft(entry.review); setEditingReview(false); }}>Cancel</button>
-                      <button className="btn-log" onClick={() => { onUpdate({ review: reviewDraft.trim() }); setEditingReview(false); }}>Save review</button>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    {entry.review ? <p className="review-text">{entry.review}</p> : <p className="quiet-note">No review yet.</p>}
-                    <button className="btn-ghost" onClick={() => { setReviewDraft(entry.review); setEditingReview(true); }}>
-                      {entry.review ? "Edit review" : "Write a review"}
-                    </button>
-                  </>
-                )}
-              </div>
+    ),
 
-              {lists.length > 0 && (
-                <div className="field">
-                  <span>Add to a list</span>
-                  <div className="row">
-                    <select value={listPick} onChange={(e) => setListPick(e.target.value)}>
-                      <option value="">Choose a list…</option>
-                      {lists.map((l) => (
-                        <option key={l.id} value={l.id} disabled={l.movieIds.includes(entry.id)}>
-                          {l.name}{l.movieIds.includes(entry.id) ? " (already in)" : ""}
-                        </option>
-                      ))}
-                    </select>
-                    <button className="btn-ghost" disabled={!listPick} onClick={() => { onAddToList(listPick); setListPick(""); }}>
-                      Add
-                    </button>
-                  </div>
-                </div>
-              )}
+    lists.length > 0 && /*#__PURE__*/
+    React.createElement("div", { className: "field" }, /*#__PURE__*/
+    React.createElement("span", null, "Add to a list"), /*#__PURE__*/
+    React.createElement("div", { className: "row" }, /*#__PURE__*/
+    React.createElement("select", { value: listPick, onChange: (e) => setListPick(e.target.value) }, /*#__PURE__*/
+    React.createElement("option", { value: "" }, "Choose a list…"),
+    lists.map((l) => /*#__PURE__*/
+    React.createElement("option", { key: l.id, value: l.id, disabled: l.movieIds.includes(entry.id) },
+    l.name, l.movieIds.includes(entry.id) ? " (already in)" : ""
+    )
+    )
+    ), /*#__PURE__*/
+    React.createElement("button", { className: "btn-ghost", disabled: !listPick, onClick: () => {onAddToList(listPick);setListPick("");} }, "Add"
 
-              <div className="danger-zone">
-                {confirmDelete ? (
-                  <div className="row">
-                    <span className="quiet-note">Remove this entry and its review?</span>
-                    <button className="btn-danger" onClick={onDelete}>Yes, remove</button>
-                    <button className="btn-ghost" onClick={() => setConfirmDelete(false)}>Keep it</button>
-                  </div>
-                ) : (
-                  <button className="btn-ghost danger" onClick={() => setConfirmDelete(true)}>Remove from films</button>
-                )}
-              </div>
-            </div>
-          </div>
+    )
+    )
+    ), /*#__PURE__*/
 
-          <div className="poster-picker">
-            <h2 className="section-head">Alternate posters</h2>
-            {posters === null && !loadingPosters && !postersError && (
-              <button className="btn-ghost" onClick={loadPosters}>Change poster</button>
-            )}
-            {loadingPosters && <p className="quiet-note">Pulling posters…</p>}
-            {postersError && (
-              <div className="notice error">
-                {postersError} <button className="link" onClick={loadPosters}>Retry</button>
-              </div>
-            )}
-            {posters && posters.length === 0 && <p className="quiet-note">TMDB has no alternate posters for this one.</p>}
-            {posters && posters.length > 0 && (
-              <>
-                <p className="quiet-note">{posters.length} posters · click one to make it this entry's poster</p>
-                <div className="poster-grid">
-                  {posters.map((p) => {
-                    const active = (entry.chosenPoster || entry.posterPath) === p.file_path;
-                    return (
-                      <button
-                        key={p.file_path}
-                        className={"poster-option" + (active ? " active" : "")}
-                        onClick={() => { onUpdate({ chosenPoster: p.file_path }); notify("Poster updated."); }}
-                        aria-label={`Use ${p.iso_639_1 ? p.iso_639_1.toUpperCase() : "textless"} poster`}
-                        aria-pressed={active}
-                      >
-                        <img src={IMG + "w185" + p.file_path} alt="" loading="lazy" />
-                        <span className="poster-lang">{p.iso_639_1 ? p.iso_639_1.toUpperCase() : "—"}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </>
-            )}
-          </div>
-        </section>
-      );
-    }
 
-    /* ---------------- lists ---------------- */
+    React.createElement("div", { className: "danger-zone" },
+    confirmDelete ? /*#__PURE__*/
+    React.createElement("div", { className: "row" }, /*#__PURE__*/
+    React.createElement("span", { className: "quiet-note" }, "Remove this entry and its review?"), /*#__PURE__*/
+    React.createElement("button", { className: "btn-danger", onClick: onDelete }, "Yes, remove"), /*#__PURE__*/
+    React.createElement("button", { className: "btn-ghost", onClick: () => setConfirmDelete(false) }, "Keep it")
+    ) : /*#__PURE__*/
 
-    function ListsPage({ lists, entries, movieCache, onCreate, onOpen, onDelete }) {
+    React.createElement("button", { className: "btn-ghost danger", onClick: () => setConfirmDelete(true) }, "Remove from films")
+
+    )
+    )
+    ), /*#__PURE__*/
+
+    React.createElement("div", { className: "poster-picker" }, /*#__PURE__*/
+    React.createElement("h2", { className: "section-head" }, "Alternate posters"),
+    posters === null && !loadingPosters && !postersError && /*#__PURE__*/
+    React.createElement("button", { className: "btn-ghost", onClick: loadPosters }, "Change poster"),
+
+    loadingPosters && /*#__PURE__*/React.createElement("p", { className: "quiet-note" }, "Pulling posters…"),
+    postersError && /*#__PURE__*/
+    React.createElement("div", { className: "notice error" },
+    postersError, " ", /*#__PURE__*/React.createElement("button", { className: "link", onClick: loadPosters }, "Retry")
+    ),
+
+    posters && posters.length === 0 && /*#__PURE__*/React.createElement("p", { className: "quiet-note" }, "TMDB has no alternate posters for this one."),
+    posters && posters.length > 0 && /*#__PURE__*/
+    React.createElement(React.Fragment, null, /*#__PURE__*/
+    React.createElement("p", { className: "quiet-note" }, posters.length, " posters · click one to make it this entry's poster"), /*#__PURE__*/
+    React.createElement("div", { className: "poster-grid" },
+    posters.map((p) => {
+      const active = (entry.chosenPoster || entry.posterPath) === p.file_path;
+      return (/*#__PURE__*/
+        React.createElement("button", {
+          key: p.file_path,
+          className: "poster-option" + (active ? " active" : ""),
+          onClick: () => {onUpdate({ chosenPoster: p.file_path });notify("Poster updated.");},
+          "aria-label": `Use ${p.iso_639_1 ? p.iso_639_1.toUpperCase() : "textless"} poster`,
+          "aria-pressed": active }, /*#__PURE__*/
+
+        React.createElement("img", { src: IMG + "w185" + p.file_path, alt: "", loading: "lazy" }), /*#__PURE__*/
+        React.createElement("span", { className: "poster-lang" }, p.iso_639_1 ? p.iso_639_1.toUpperCase() : "—")
+        ));
+
+    })
+    )
+    )
+
+    )
+    ));
+
+}
+
+/* ---------------- lists ---------------- */
+
+function ListsPage({ lists, entries, movieCache, onCreate, onOpen, onDelete }) {
   const [name, setName] = useState("");
   const [confirm, setConfirm] = useState(null);
 
-  return (
-    <section>
-      <h1 className="page-head">Lists</h1>
-      <div className="row list-create">
-        <input
-          type="text"
-          placeholder="New list — e.g. Best of 2026"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter" && name.trim()) { onCreate(name.trim()); setName(""); } }}
-        />
-        <button className="btn-log" disabled={!name.trim()} onClick={() => { onCreate(name.trim()); setName(""); }}>
-          Create list
-        </button>
-      </div>
+  return (/*#__PURE__*/
+    React.createElement("section", null, /*#__PURE__*/
+    React.createElement("h1", { className: "page-head" }, "Lists"), /*#__PURE__*/
+    React.createElement("div", { className: "row list-create" }, /*#__PURE__*/
+    React.createElement("input", {
+      type: "text",
+      placeholder: "New list — e.g. Best of 2026",
+      value: name,
+      onChange: (e) => setName(e.target.value),
+      onKeyDown: (e) => {if (e.key === "Enter" && name.trim()) {onCreate(name.trim());setName("");}} }
+    ), /*#__PURE__*/
+    React.createElement("button", { className: "btn-log", disabled: !name.trim(), onClick: () => {onCreate(name.trim());setName("");} }, "Create list"
 
-      {lists.length === 0 && (
-        <p className="quiet-note">No lists yet. Make one for anything — a year's best, a rewatch pile, a director run.</p>
-      )}
+    )
+    ),
 
-      <div className="list-cards">
-        {lists.map((l) => {
-          const covers = l.movieIds.slice(0, 4).map((id) => resolveMovie(id, entries, movieCache)).filter(Boolean);
-          return (
-            <div className="list-card" key={l.id}>
-              <button className="list-card-open" onClick={() => onOpen(l.id)}>
-                <div className="list-covers" aria-hidden="true">
-                  {covers.length === 0 && <div className="thumb-blank" />}
-                  {covers.map((m) =>
-                    m.posterPath ? (
-                      <img key={m.id} src={IMG + "w92" + m.posterPath} alt="" loading="lazy" />
-                    ) : (
-                      <div className="thumb-blank" key={m.id} />
-                    )
-                  )}
-                </div>
-                <div>
-                  <div className="list-name">{l.name}</div>
-                  <div className="quiet-note">{l.movieIds.length} {l.movieIds.length === 1 ? "movie" : "movies"}</div>
-                </div>
-              </button>
-              {confirm === l.id ? (
-                <div className="row">
-                  <button className="btn-danger" onClick={() => { onDelete(l.id); setConfirm(null); }}>Delete</button>
-                  <button className="btn-ghost" onClick={() => setConfirm(null)}>Keep</button>
-                </div>
-              ) : (
-                <button className="btn-ghost danger" onClick={() => setConfirm(l.id)} aria-label={`Delete list ${l.name}`}>✕</button>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </section>
-  );
+    lists.length === 0 && /*#__PURE__*/
+    React.createElement("p", { className: "quiet-note" }, "No lists yet. Make one for anything — a year's best, a rewatch pile, a director run."), /*#__PURE__*/
+
+
+    React.createElement("div", { className: "list-cards" },
+    lists.map((l) => {
+      const covers = l.movieIds.slice(0, 4).map((id) => resolveMovie(id, entries, movieCache)).filter(Boolean);
+      return (/*#__PURE__*/
+        React.createElement("div", { className: "list-card", key: l.id }, /*#__PURE__*/
+        React.createElement("button", { className: "list-card-open", onClick: () => onOpen(l.id) }, /*#__PURE__*/
+        React.createElement("div", { className: "list-covers", "aria-hidden": "true" },
+        covers.length === 0 && /*#__PURE__*/React.createElement("div", { className: "thumb-blank" }),
+        covers.map((m) =>
+        m.posterPath ? /*#__PURE__*/
+        React.createElement("img", { key: m.id, src: IMG + "w92" + m.posterPath, alt: "", loading: "lazy" }) : /*#__PURE__*/
+
+        React.createElement("div", { className: "thumb-blank", key: m.id })
+
+        )
+        ), /*#__PURE__*/
+        React.createElement("div", null, /*#__PURE__*/
+        React.createElement("div", { className: "list-name" }, l.name), /*#__PURE__*/
+        React.createElement("div", { className: "quiet-note" }, l.movieIds.length, " ", l.movieIds.length === 1 ? "movie" : "movies")
+        )
+        ),
+        confirm === l.id ? /*#__PURE__*/
+        React.createElement("div", { className: "row" }, /*#__PURE__*/
+        React.createElement("button", { className: "btn-danger", onClick: () => {onDelete(l.id);setConfirm(null);} }, "Delete"), /*#__PURE__*/
+        React.createElement("button", { className: "btn-ghost", onClick: () => setConfirm(null) }, "Keep")
+        ) : /*#__PURE__*/
+
+        React.createElement("button", { className: "btn-ghost danger", onClick: () => setConfirm(l.id), "aria-label": `Delete list ${l.name}` }, "✕")
+
+        ));
+
+    })
+    )
+    ));
+
 }
 
-    function ListDetail({ list, entries, movieCache, tmdb, onCacheMovie, onBack, onOpenMovie, onUpdate }) {
+function ListDetail({ list, entries, movieCache, tmdb, onCacheMovie, onBack, onOpenMovie, onUpdate }) {
   const [renaming, setRenaming] = useState(false);
   const [nameDraft, setNameDraft] = useState(list ? list.name : "");
   const [adding, setAdding] = useState(false);
@@ -1792,7 +1795,7 @@ function IconPlus() {
     return () => window.clearTimeout(timer.current);
   }, [query, adding, tmdb]);
 
-  if (!list) return <p className="quiet-note">That list is gone.</p>;
+  if (!list) return /*#__PURE__*/React.createElement("p", { className: "quiet-note" }, "That list is gone.");
 
   const move = (idx, dir) => {
     const next = [...list.movieIds];
@@ -1817,500 +1820,500 @@ function IconPlus() {
     setSearchError(null);
   };
 
-  return (
-    <section>
-      <button className="btn-ghost back" onClick={onBack}>← Lists</button>
-      {renaming ? (
-        <div className="row">
-          <input type="text" value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} autoFocus />
-          <button className="btn-log" onClick={() => { onUpdate({ name: nameDraft.trim() || list.name }); setRenaming(false); }}>Save</button>
-        </div>
-      ) : (
-        <h1 className="page-head list-head">
-          <span>{list.name}</span>
-          <span className="list-head-actions">
-            <button className="icon-btn" onClick={() => { setNameDraft(list.name); setRenaming(true); }} aria-label="Rename list">
-              <IconEdit />
-            </button>
-            <button className="icon-btn" onClick={() => setAdding(true)} aria-label="Add films to this list">
-              <IconPlus />
-            </button>
-          </span>
-        </h1>
-      )}
+  return (/*#__PURE__*/
+    React.createElement("section", null, /*#__PURE__*/
+    React.createElement("button", { className: "btn-ghost back", onClick: onBack }, "← Lists"),
+    renaming ? /*#__PURE__*/
+    React.createElement("div", { className: "row" }, /*#__PURE__*/
+    React.createElement("input", { type: "text", value: nameDraft, onChange: (e) => setNameDraft(e.target.value), autoFocus: true }), /*#__PURE__*/
+    React.createElement("button", { className: "btn-log", onClick: () => {onUpdate({ name: nameDraft.trim() || list.name });setRenaming(false);} }, "Save")
+    ) : /*#__PURE__*/
 
-      {list.movieIds.length === 0 && (
-        <p className="quiet-note">Empty so far. Tap + above to search for and add any film.</p>
-      )}
+    React.createElement("h1", { className: "page-head list-head" }, /*#__PURE__*/
+    React.createElement("span", null, list.name), /*#__PURE__*/
+    React.createElement("span", { className: "list-head-actions" }, /*#__PURE__*/
+    React.createElement("button", { className: "icon-btn", onClick: () => {setNameDraft(list.name);setRenaming(true);}, "aria-label": "Rename list" }, /*#__PURE__*/
+    React.createElement(IconEdit, null)
+    ), /*#__PURE__*/
+    React.createElement("button", { className: "icon-btn", onClick: () => setAdding(true), "aria-label": "Add films to this list" }, /*#__PURE__*/
+    React.createElement(IconPlus, null)
+    )
+    )
+    ),
 
-      <ol className="list-rows">
-        {list.movieIds.map((id, idx) => {
-          const m = resolveMovie(id, entries, movieCache);
-          if (!m) return null;
-          return (
-            <li className="list-row" key={id}>
-              <span className="list-row-num">{idx + 1}</span>
-              <button className="list-row-main" onClick={() => onOpenMovie(id)} disabled={!m.logged}>
-                {m.posterPath ? <img src={IMG + "w92" + m.posterPath} alt="" loading="lazy" /> : <div className="thumb-blank" />}
-                <span className="result-title">{m.title}</span>
-                <span className="result-year">{yearOf(m)}</span>
-                {m.logged ? <StarDisplay value={entries[id].rating} size={12} /> : <span className="result-flag">not logged</span>}
-              </button>
-              <div className="row-btns">
-                <button className="btn-ghost" onClick={() => move(idx, -1)} disabled={idx === 0} aria-label={`Move ${m.title} up`}>↑</button>
-                <button className="btn-ghost" onClick={() => move(idx, 1)} disabled={idx === list.movieIds.length - 1} aria-label={`Move ${m.title} down`}>↓</button>
-                <button
-                  className="btn-ghost danger"
-                  aria-label={`Remove ${m.title} from list`}
-                  onClick={() => onUpdate({ movieIds: list.movieIds.filter((x) => x !== id) })}
-                >✕</button>
-              </div>
-            </li>
-          );
-        })}
-      </ol>
 
-      {adding && (
-        <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && closeAdding()}>
-          <div className="modal" role="dialog" aria-modal="true" aria-label="Add films to list">
-            <div className="modal-head">
-              <h2>Add to &ldquo;{list.name}&rdquo;</h2>
-              <button className="btn-ghost" onClick={closeAdding} aria-label="Close">✕</button>
-            </div>
-            <input
-              ref={searchRef}
-              className="search-big"
-              type="search"
-              placeholder="Search TMDB by title…"
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-            />
-            {searchError && <div className="notice error">{searchError}</div>}
-            {searching && <div className="quiet-note">Searching…</div>}
-            <ul className="results">
-              {results.map((r) => {
-                const already = list.movieIds.includes(String(r.id));
-                return (
-                  <li key={r.id}>
-                    <button className="result" onClick={() => addMovie(r)}>
-                      {r.poster_path ? (
-                        <img src={IMG + "w92" + r.poster_path} alt="" loading="lazy" />
-                      ) : (
-                        <div className="thumb-blank" />
-                      )}
-                      <span className="result-title">{r.title}</span>
-                      <span className="result-year">{r.release_date ? r.release_date.slice(0, 4) : ""}</span>
-                      {already && <span className="result-flag">added</span>}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-            {!searching && query && results.length === 0 && !searchError && (
-              <p className="quiet-note">No matches. Check the spelling or try a shorter title.</p>
-            )}
-          </div>
-        </div>
-      )}
-    </section>
-  );
+    list.movieIds.length === 0 && /*#__PURE__*/
+    React.createElement("p", { className: "quiet-note" }, "Empty so far. Tap + above to search for and add any film."), /*#__PURE__*/
+
+
+    React.createElement("ol", { className: "list-rows" },
+    list.movieIds.map((id, idx) => {
+      const m = resolveMovie(id, entries, movieCache);
+      if (!m) return null;
+      return (/*#__PURE__*/
+        React.createElement("li", { className: "list-row", key: id }, /*#__PURE__*/
+        React.createElement("span", { className: "list-row-num" }, idx + 1), /*#__PURE__*/
+        React.createElement("button", { className: "list-row-main", onClick: () => onOpenMovie(id), disabled: !m.logged },
+        m.posterPath ? /*#__PURE__*/React.createElement("img", { src: IMG + "w92" + m.posterPath, alt: "", loading: "lazy" }) : /*#__PURE__*/React.createElement("div", { className: "thumb-blank" }), /*#__PURE__*/
+        React.createElement("span", { className: "result-title" }, m.title), /*#__PURE__*/
+        React.createElement("span", { className: "result-year" }, yearOf(m)),
+        m.logged ? /*#__PURE__*/React.createElement(StarDisplay, { value: entries[id].rating, size: 12 }) : /*#__PURE__*/React.createElement("span", { className: "result-flag" }, "not logged")
+        ), /*#__PURE__*/
+        React.createElement("div", { className: "row-btns" }, /*#__PURE__*/
+        React.createElement("button", { className: "btn-ghost", onClick: () => move(idx, -1), disabled: idx === 0, "aria-label": `Move ${m.title} up` }, "↑"), /*#__PURE__*/
+        React.createElement("button", { className: "btn-ghost", onClick: () => move(idx, 1), disabled: idx === list.movieIds.length - 1, "aria-label": `Move ${m.title} down` }, "↓"), /*#__PURE__*/
+        React.createElement("button", {
+          className: "btn-ghost danger",
+          "aria-label": `Remove ${m.title} from list`,
+          onClick: () => onUpdate({ movieIds: list.movieIds.filter((x) => x !== id) }) },
+        "✕")
+        )
+        ));
+
+    })
+    ),
+
+    adding && /*#__PURE__*/
+    React.createElement("div", { className: "overlay", onMouseDown: (e) => e.target === e.currentTarget && closeAdding() }, /*#__PURE__*/
+    React.createElement("div", { className: "modal", role: "dialog", "aria-modal": "true", "aria-label": "Add films to list" }, /*#__PURE__*/
+    React.createElement("div", { className: "modal-head" }, /*#__PURE__*/
+    React.createElement("h2", null, "Add to “", list.name, "”"), /*#__PURE__*/
+    React.createElement("button", { className: "btn-ghost", onClick: closeAdding, "aria-label": "Close" }, "✕")
+    ), /*#__PURE__*/
+    React.createElement("input", {
+      ref: searchRef,
+      className: "search-big",
+      type: "search",
+      placeholder: "Search TMDB by title…",
+      value: query,
+      onChange: (e) => setQuery(e.target.value) }
+    ),
+    searchError && /*#__PURE__*/React.createElement("div", { className: "notice error" }, searchError),
+    searching && /*#__PURE__*/React.createElement("div", { className: "quiet-note" }, "Searching…"), /*#__PURE__*/
+    React.createElement("ul", { className: "results" },
+    results.map((r) => {
+      const already = list.movieIds.includes(String(r.id));
+      return (/*#__PURE__*/
+        React.createElement("li", { key: r.id }, /*#__PURE__*/
+        React.createElement("button", { className: "result", onClick: () => addMovie(r) },
+        r.poster_path ? /*#__PURE__*/
+        React.createElement("img", { src: IMG + "w92" + r.poster_path, alt: "", loading: "lazy" }) : /*#__PURE__*/
+
+        React.createElement("div", { className: "thumb-blank" }), /*#__PURE__*/
+
+        React.createElement("span", { className: "result-title" }, r.title), /*#__PURE__*/
+        React.createElement("span", { className: "result-year" }, r.release_date ? r.release_date.slice(0, 4) : ""),
+        already && /*#__PURE__*/React.createElement("span", { className: "result-flag" }, "added")
+        )
+        ));
+
+    })
+    ),
+    !searching && query && results.length === 0 && !searchError && /*#__PURE__*/
+    React.createElement("p", { className: "quiet-note" }, "No matches. Check the spelling or try a shorter title.")
+
+    )
+    )
+
+    ));
+
 }
 
-    function StatsPage({ entries }) {
-      const stats = useMemo(() => {
-        if (entries.length === 0) return null;
-        const avg = entries.reduce((s, e) => s + e.rating, 0) / entries.length;
+function StatsPage({ entries }) {
+  const stats = useMemo(() => {
+    if (entries.length === 0) return null;
+    const avg = entries.reduce((s, e) => s + e.rating, 0) / entries.length;
 
-        const genreCount = {};
-        entries.forEach((e) => (e.genres || []).forEach((g) => (genreCount[g] = (genreCount[g] || 0) + 1)));
-        const topGenre = Object.entries(genreCount).sort((a, b) => b[1] - a[1])[0];
+    const genreCount = {};
+    entries.forEach((e) => (e.genres || []).forEach((g) => genreCount[g] = (genreCount[g] || 0) + 1));
+    const topGenre = Object.entries(genreCount).sort((a, b) => b[1] - a[1])[0];
 
-        const decadeCount = {};
-        entries.forEach((e) => {
-          const y = e.releaseDate ? Number(e.releaseDate.slice(0, 4)) : null;
-          if (y) {
-            const d = Math.floor(y / 10) * 10;
-            decadeCount[d] = (decadeCount[d] || 0) + 1;
-          }
-        });
-        const topDecade = Object.entries(decadeCount).sort((a, b) => b[1] - a[1])[0];
-
-        // last 12 months
-        const months = [];
-        const now = new Date();
-        for (let i = 11; i >= 0; i--) {
-          const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-          const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-          months.push({ key, label: d.toLocaleDateString(undefined, { month: "short" }), count: 0 });
-        }
-        entries.forEach((e) => {
-          const key = (e.watchedDate || "").slice(0, 7);
-          const m = months.find((x) => x.key === key);
-          if (m) m.count++;
-        });
-        const maxMonth = Math.max(1, ...months.map((m) => m.count));
-
-        const ratingDist = {};
-        entries.forEach((e) => (ratingDist[e.rating] = (ratingDist[e.rating] || 0) + 1));
-
-        return { avg, topGenre, topDecade, months, maxMonth, ratingDist };
-      }, [entries]);
-
-      if (!stats) {
-        return (
-          <section>
-            <h1 className="page-head">Stats</h1>
-            <p className="quiet-note">Numbers show up once you've logged a few movies.</p>
-          </section>
-        );
+    const decadeCount = {};
+    entries.forEach((e) => {
+      const y = e.releaseDate ? Number(e.releaseDate.slice(0, 4)) : null;
+      if (y) {
+        const d = Math.floor(y / 10) * 10;
+        decadeCount[d] = (decadeCount[d] || 0) + 1;
       }
+    });
+    const topDecade = Object.entries(decadeCount).sort((a, b) => b[1] - a[1])[0];
 
-      return (
-        <section>
-          <h1 className="page-head">Stats</h1>
-          <div className="stat-cards">
-            <div className="stat-card">
-              <div className="stat-num">{entries.length}</div>
-              <div className="stat-label">movies logged</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-num">{stats.avg.toFixed(2)}</div>
-              <div className="stat-label">average rating</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-num small">{stats.topGenre ? stats.topGenre[0] : "—"}</div>
-              <div className="stat-label">most-logged genre{stats.topGenre ? ` (${stats.topGenre[1]})` : ""}</div>
-            </div>
-            <div className="stat-card">
-              <div className="stat-num small">{stats.topDecade ? stats.topDecade[0] + "s" : "—"}</div>
-              <div className="stat-label">most-logged decade{stats.topDecade ? ` (${stats.topDecade[1]})` : ""}</div>
-            </div>
-          </div>
-
-          <h2 className="section-head">Movies by month</h2>
-          <div className="bar-chart" role="img" aria-label="Movies watched per month over the last year">
-            {stats.months.map((m) => (
-              <div className="bar-col" key={m.key}>
-                <div className="bar-val">{m.count > 0 ? m.count : ""}</div>
-                <div className="bar" style={{ height: (m.count / stats.maxMonth) * 120 + "px" }} />
-                <div className="bar-label">{m.label}</div>
-              </div>
-            ))}
-          </div>
-
-          <h2 className="section-head">Ratings</h2>
-          <div className="rating-histogram" role="img" aria-label="Rating distribution from half a star to five stars">
-            {[0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5].map((r) => {
-              const c = stats.ratingDist[r] || 0;
-              const max = Math.max(1, ...Object.values(stats.ratingDist));
-              return (
-                <div className="rating-column" key={r} aria-label={`${r} stars: ${c} movies`}>
-                  <span className="rating-count">{c || ""}</span>
-                  <div className="rating-track">
-                    <div
-                      className="rating-bar"
-                      style={{ height: Math.max(2, (c / max) * 120) + "px" }}
-                    />
-                  </div>
-                  <span className="rating-label">{r}</span>
-                </div>
-              );
-            })}
-          </div>
-        </section>
-      );
+    // last 12 months
+    const months = [];
+    const now = new Date();
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      months.push({ key, label: d.toLocaleDateString(undefined, { month: "short" }), count: 0 });
     }
+    entries.forEach((e) => {
+      const key = (e.watchedDate || "").slice(0, 7);
+      const m = months.find((x) => x.key === key);
+      if (m) m.count++;
+    });
+    const maxMonth = Math.max(1, ...months.map((m) => m.count));
 
-    /* ---------------- settings ---------------- */
+    const ratingDist = {};
+    entries.forEach((e) => ratingDist[e.rating] = (ratingDist[e.rating] || 0) + 1);
 
-    function SettingsPage({ apiKey, onSave, tmdb, profile, email, onSaveProfile, onUploadAvatar, onImportLegacy, onSignOut, onOpenStats }) {
-      const [draft, setDraft] = useState(apiKey);
-      const [testState, setTestState] = useState(null);
-      const [username, setUsername] = useState(profile ? profile.username : "");
-      const [displayName, setDisplayName] = useState(profile ? profile.display_name : "");
-      const [profileError, setProfileError] = useState(null);
-      const [savingProfile, setSavingProfile] = useState(false);
-      const [uploadingAvatar, setUploadingAvatar] = useState(false);
-      const [avatarError, setAvatarError] = useState(null);
-      const [importing, setImporting] = useState(false);
-      const [importError, setImportError] = useState(null);
+    return { avg, topGenre, topDecade, months, maxMonth, ratingDist };
+  }, [entries]);
 
-      useEffect(() => {
-        setUsername(profile ? profile.username : "");
-        setDisplayName(profile ? profile.display_name : "");
-      }, [profile]);
+  if (!stats) {
+    return (/*#__PURE__*/
+      React.createElement("section", null, /*#__PURE__*/
+      React.createElement("h1", { className: "page-head" }, "Stats"), /*#__PURE__*/
+      React.createElement("p", { className: "quiet-note" }, "Numbers show up once you've logged a few movies.")
+      ));
 
-      const test = async () => {
-        setTestState("testing");
-        try {
-          const t = buildTmdb(draft.trim());
-          await t("/configuration", {});
-          setTestState("ok");
-        } catch (err) {
-          setTestState(friendlyError(err));
-        }
-      };
+  }
 
-      const saveProfile = async () => {
-        setSavingProfile(true);
-        setProfileError(null);
-        const error = await onSaveProfile({ username, displayName });
-        setProfileError(error);
-        setSavingProfile(false);
-      };
+  return (/*#__PURE__*/
+    React.createElement("section", null, /*#__PURE__*/
+    React.createElement("h1", { className: "page-head" }, "Stats"), /*#__PURE__*/
+    React.createElement("div", { className: "stat-cards" }, /*#__PURE__*/
+    React.createElement("div", { className: "stat-card" }, /*#__PURE__*/
+    React.createElement("div", { className: "stat-num" }, entries.length), /*#__PURE__*/
+    React.createElement("div", { className: "stat-label" }, "movies logged")
+    ), /*#__PURE__*/
+    React.createElement("div", { className: "stat-card" }, /*#__PURE__*/
+    React.createElement("div", { className: "stat-num" }, stats.avg.toFixed(2)), /*#__PURE__*/
+    React.createElement("div", { className: "stat-label" }, "average rating")
+    ), /*#__PURE__*/
+    React.createElement("div", { className: "stat-card" }, /*#__PURE__*/
+    React.createElement("div", { className: "stat-num small" }, stats.topGenre ? stats.topGenre[0] : "—"), /*#__PURE__*/
+    React.createElement("div", { className: "stat-label" }, "most-logged genre", stats.topGenre ? ` (${stats.topGenre[1]})` : "")
+    ), /*#__PURE__*/
+    React.createElement("div", { className: "stat-card" }, /*#__PURE__*/
+    React.createElement("div", { className: "stat-num small" }, stats.topDecade ? stats.topDecade[0] + "s" : "—"), /*#__PURE__*/
+    React.createElement("div", { className: "stat-label" }, "most-logged decade", stats.topDecade ? ` (${stats.topDecade[1]})` : "")
+    )
+    ), /*#__PURE__*/
 
-      const chooseAvatar = async (event) => {
-        const file = event.target.files && event.target.files[0];
-        event.target.value = "";
-        if (!file) return;
-        setUploadingAvatar(true);
-        setAvatarError(null);
-        const error = await onUploadAvatar(file);
-        setAvatarError(error);
-        setUploadingAvatar(false);
-      };
+    React.createElement("h2", { className: "section-head" }, "Movies by month"), /*#__PURE__*/
+    React.createElement("div", { className: "bar-chart", role: "img", "aria-label": "Movies watched per month over the last year" },
+    stats.months.map((m) => /*#__PURE__*/
+    React.createElement("div", { className: "bar-col", key: m.key }, /*#__PURE__*/
+    React.createElement("div", { className: "bar-val" }, m.count > 0 ? m.count : ""), /*#__PURE__*/
+    React.createElement("div", { className: "bar", style: { height: m.count / stats.maxMonth * 120 + "px" } }), /*#__PURE__*/
+    React.createElement("div", { className: "bar-label" }, m.label)
+    )
+    )
+    ), /*#__PURE__*/
 
-      const importLegacy = async () => {
-        if (!window.confirm("Import the old shared diary into this account? Existing account entries with the same movie will be updated.")) return;
-        setImporting(true);
-        setImportError(null);
-        const error = await onImportLegacy();
-        setImportError(error);
-        setImporting(false);
-      };
+    React.createElement("h2", { className: "section-head" }, "Ratings"), /*#__PURE__*/
+    React.createElement("div", { className: "rating-histogram", role: "img", "aria-label": "Rating distribution from half a star to five stars" },
+    [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5].map((r) => {
+      const c = stats.ratingDist[r] || 0;
+      const max = Math.max(1, ...Object.values(stats.ratingDist));
+      return (/*#__PURE__*/
+        React.createElement("div", { className: "rating-column", key: r, "aria-label": `${r} stars: ${c} movies` }, /*#__PURE__*/
+        React.createElement("span", { className: "rating-count" }, c || ""), /*#__PURE__*/
+        React.createElement("div", { className: "rating-track" }, /*#__PURE__*/
+        React.createElement("div", {
+          className: "rating-bar",
+          style: { height: Math.max(2, c / max * 120) + "px" } }
+        )
+        ), /*#__PURE__*/
+        React.createElement("span", { className: "rating-label" }, r)
+        ));
 
-      return (
-        <section className="settings">
-          <h1 className="page-head">Profile</h1>
+    })
+    )
+    ));
 
-          <div className="profile-summary">
-            <div className={"avatar large" + (profile && profile.avatar_url ? " has-image" : "")}>
-              {profile && profile.avatar_url
-                ? <img src={profile.avatar_url} alt="Your profile picture" />
-                : (displayName || username || email || "?").slice(0, 1).toUpperCase()}
-            </div>
-            <div className="profile-summary-copy">
-              <div className="profile-summary-name">{profile ? profile.display_name : "Marquee user"}</div>
-              <div className="quiet-note">{email}</div>
-              <label className={"btn-ghost avatar-upload" + (uploadingAvatar ? " disabled" : "")}>
-                {uploadingAvatar ? "Uploading…" : profile && profile.avatar_url ? "Change picture" : "Add picture"}
-                <input type="file" accept="image/jpeg,image/png,image/webp" onChange={chooseAvatar} disabled={uploadingAvatar} />
-              </label>
-            </div>
-          </div>
-          {avatarError && <div className="notice error">{avatarError}</div>}
+}
 
-          <div className="profile-fields">
-            <label className="field">
-              <span>Display name</span>
-              <input type="text" value={displayName} onChange={(e) => setDisplayName(e.target.value)} maxLength={40} />
-            </label>
-            <label className="field">
-              <span>Username</span>
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value.toLowerCase())}
-                maxLength={30}
-                autoCapitalize="none"
-                spellCheck={false}
-              />
-            </label>
-          </div>
-          <button className="btn-log" onClick={saveProfile} disabled={savingProfile || !username.trim()}>
-            {savingProfile ? "Saving…" : "Save profile"}
-          </button>
-          {profileError && <div className="notice error">{profileError}</div>}
+/* ---------------- settings ---------------- */
 
-          <h2 className="section-head">Your account</h2>
-          <div className="account-actions">
-            <button className="btn-ghost" onClick={onOpenStats}>View your stats</button>
-            <button className="btn-ghost" onClick={importLegacy} disabled={importing}>
-              {importing ? "Importing…" : "Import old diary"}
-            </button>
-            <button className="btn-ghost danger" onClick={onSignOut}>Sign out</button>
-          </div>
-          <p className="quiet-note">
-            Import old diary is only for the owner of the original shared Marquee diary. Friends should leave it alone.
-          </p>
-          {importError && <div className="notice error">{importError}</div>}
+function SettingsPage({ apiKey, onSave, tmdb, profile, email, onSaveProfile, onUploadAvatar, onImportLegacy, onSignOut, onOpenStats }) {
+  const [draft, setDraft] = useState(apiKey);
+  const [testState, setTestState] = useState(null);
+  const [username, setUsername] = useState(profile ? profile.username : "");
+  const [displayName, setDisplayName] = useState(profile ? profile.display_name : "");
+  const [profileError, setProfileError] = useState(null);
+  const [savingProfile, setSavingProfile] = useState(false);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [avatarError, setAvatarError] = useState(null);
+  const [importing, setImporting] = useState(false);
+  const [importError, setImportError] = useState(null);
 
-          <h2 className="section-head">Movie data</h2>
-          <div className="field">
-            <span>TMDB API key</span>
-            <input
-              type="text"
-              value={draft}
-              onChange={(e) => { setDraft(e.target.value); setTestState(null); }}
-              placeholder="Paste your v3 API key or v4 read access token"
-              autoComplete="off"
-              spellCheck={false}
-            />
-            <p className="quiet-note">
-              Free from themoviedb.org — sign in, then Settings → API. Either the short v3 key or the long
-              v4 token works here. It's stored only in this browser's local storage, on this device — never sent anywhere but TMDB.
-            </p>
-          </div>
-          <div className="row">
-            <button className="btn-log" disabled={!draft.trim()} onClick={() => onSave(draft.trim())}>Save key</button>
-            <button className="btn-ghost" disabled={!draft.trim() || testState === "testing"} onClick={test}>
-              {testState === "testing" ? "Testing…" : "Test connection"}
-            </button>
-          </div>
-          {testState === "ok" && <div className="notice good">Key works — TMDB answered.</div>}
-          {testState && testState !== "ok" && testState !== "testing" && <div className="notice error">{testState}</div>}
-        </section>
-      );
+  useEffect(() => {
+    setUsername(profile ? profile.username : "");
+    setDisplayName(profile ? profile.display_name : "");
+  }, [profile]);
+
+  const test = async () => {
+    setTestState("testing");
+    try {
+      const t = buildTmdb(draft.trim());
+      await t("/configuration", {});
+      setTestState("ok");
+    } catch (err) {
+      setTestState(friendlyError(err));
     }
+  };
 
-    /* ---------------- authentication ---------------- */
+  const saveProfile = async () => {
+    setSavingProfile(true);
+    setProfileError(null);
+    const error = await onSaveProfile({ username, displayName });
+    setProfileError(error);
+    setSavingProfile(false);
+  };
 
-    function AuthPage({ client }) {
-      const [email, setEmail] = useState("");
-      const [password, setPassword] = useState("");
-      const [busy, setBusy] = useState(false);
-      const [message, setMessage] = useState(null);
-      const [error, setError] = useState(null);
+  const chooseAvatar = async (event) => {
+    const file = event.target.files && event.target.files[0];
+    event.target.value = "";
+    if (!file) return;
+    setUploadingAvatar(true);
+    setAvatarError(null);
+    const error = await onUploadAvatar(file);
+    setAvatarError(error);
+    setUploadingAvatar(false);
+  };
 
-      const signIn = async (e) => {
-        e.preventDefault();
-        setBusy(true);
-        setError(null);
-        setMessage(null);
-        const { error: signInError } = await client.auth.signInWithPassword({ email: email.trim(), password });
-        if (signInError) setError(signInError.message);
-        setBusy(false);
-      };
+  const importLegacy = async () => {
+    if (!window.confirm("Import the old shared diary into this account? Existing account entries with the same movie will be updated.")) return;
+    setImporting(true);
+    setImportError(null);
+    const error = await onImportLegacy();
+    setImportError(error);
+    setImporting(false);
+  };
 
-      const resetPassword = async () => {
-        if (!email.trim()) {
-          setError("Enter your email address first.");
-          return;
-        }
-        setBusy(true);
-        setError(null);
-        const { error: resetError } = await client.auth.resetPasswordForEmail(email.trim(), {
-          redirectTo: window.location.origin + window.location.pathname,
-        });
-        if (resetError) setError(resetError.message);
-        else setMessage("Password reset email sent.");
-        setBusy(false);
-      };
+  return (/*#__PURE__*/
+    React.createElement("section", { className: "settings" }, /*#__PURE__*/
+    React.createElement("h1", { className: "page-head" }, "Profile"), /*#__PURE__*/
 
-      return (
-        <div className="mvd auth-shell">
-          <StyleTag />
-          <div className="auth-brand"><LogoMark size={42} /><span>MARQUEE</span></div>
-          <form className="auth-card" onSubmit={signIn}>
-            <div className="eyebrow">Private film circle</div>
-            <h1>Welcome back</h1>
-            <p>Sign in with the account connected to your Marquee invitation.</p>
-            <label className="field">
-              <span>Email</span>
-              <input type="text" inputMode="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-            </label>
-            <label className="field">
-              <span>Password</span>
-              <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
-            </label>
-            {error && <div className="notice error">{error}</div>}
-            {message && <div className="notice good">{message}</div>}
-            <button className="btn-log auth-submit" disabled={busy || !email.trim() || !password}>
-              {busy ? "Signing in…" : "Sign in"}
-            </button>
-            <button className="link auth-link" type="button" onClick={resetPassword} disabled={busy}>Forgot password?</button>
-            <p className="auth-invite-note">Marquee is invite-only. Ask the owner for an invitation if you don't have an account.</p>
-          </form>
-        </div>
-      );
+    React.createElement("div", { className: "profile-summary" }, /*#__PURE__*/
+    React.createElement("div", { className: "avatar large" + (profile && profile.avatar_url ? " has-image" : "") },
+    profile && profile.avatar_url ? /*#__PURE__*/
+    React.createElement("img", { src: profile.avatar_url, alt: "Your profile picture" }) :
+    (displayName || username || email || "?").slice(0, 1).toUpperCase()
+    ), /*#__PURE__*/
+    React.createElement("div", { className: "profile-summary-copy" }, /*#__PURE__*/
+    React.createElement("div", { className: "profile-summary-name" }, profile ? profile.display_name : "Marquee user"), /*#__PURE__*/
+    React.createElement("div", { className: "quiet-note" }, email), /*#__PURE__*/
+    React.createElement("label", { className: "btn-ghost avatar-upload" + (uploadingAvatar ? " disabled" : "") },
+    uploadingAvatar ? "Uploading…" : profile && profile.avatar_url ? "Change picture" : "Add picture", /*#__PURE__*/
+    React.createElement("input", { type: "file", accept: "image/jpeg,image/png,image/webp", onChange: chooseAvatar, disabled: uploadingAvatar })
+    )
+    )
+    ),
+    avatarError && /*#__PURE__*/React.createElement("div", { className: "notice error" }, avatarError), /*#__PURE__*/
+
+    React.createElement("div", { className: "profile-fields" }, /*#__PURE__*/
+    React.createElement("label", { className: "field" }, /*#__PURE__*/
+    React.createElement("span", null, "Display name"), /*#__PURE__*/
+    React.createElement("input", { type: "text", value: displayName, onChange: (e) => setDisplayName(e.target.value), maxLength: 40 })
+    ), /*#__PURE__*/
+    React.createElement("label", { className: "field" }, /*#__PURE__*/
+    React.createElement("span", null, "Username"), /*#__PURE__*/
+    React.createElement("input", {
+      type: "text",
+      value: username,
+      onChange: (e) => setUsername(e.target.value.toLowerCase()),
+      maxLength: 30,
+      autoCapitalize: "none",
+      spellCheck: false }
+    )
+    )
+    ), /*#__PURE__*/
+    React.createElement("button", { className: "btn-log", onClick: saveProfile, disabled: savingProfile || !username.trim() },
+    savingProfile ? "Saving…" : "Save profile"
+    ),
+    profileError && /*#__PURE__*/React.createElement("div", { className: "notice error" }, profileError), /*#__PURE__*/
+
+    React.createElement("h2", { className: "section-head" }, "Your account"), /*#__PURE__*/
+    React.createElement("div", { className: "account-actions" }, /*#__PURE__*/
+    React.createElement("button", { className: "btn-ghost", onClick: onOpenStats }, "View your stats"), /*#__PURE__*/
+    React.createElement("button", { className: "btn-ghost", onClick: importLegacy, disabled: importing },
+    importing ? "Importing…" : "Import old diary"
+    ), /*#__PURE__*/
+    React.createElement("button", { className: "btn-ghost danger", onClick: onSignOut }, "Sign out")
+    ), /*#__PURE__*/
+    React.createElement("p", { className: "quiet-note" }, "Import old diary is only for the owner of the original shared Marquee diary. Friends should leave it alone."
+
+    ),
+    importError && /*#__PURE__*/React.createElement("div", { className: "notice error" }, importError), /*#__PURE__*/
+
+    React.createElement("h2", { className: "section-head" }, "Movie data"), /*#__PURE__*/
+    React.createElement("div", { className: "field" }, /*#__PURE__*/
+    React.createElement("span", null, "TMDB API key"), /*#__PURE__*/
+    React.createElement("input", {
+      type: "text",
+      value: draft,
+      onChange: (e) => {setDraft(e.target.value);setTestState(null);},
+      placeholder: "Paste your v3 API key or v4 read access token",
+      autoComplete: "off",
+      spellCheck: false }
+    ), /*#__PURE__*/
+    React.createElement("p", { className: "quiet-note" }, "Free from themoviedb.org — sign in, then Settings → API. Either the short v3 key or the long v4 token works here. It's stored only in this browser's local storage, on this device — never sent anywhere but TMDB."
+
+
+    )
+    ), /*#__PURE__*/
+    React.createElement("div", { className: "row" }, /*#__PURE__*/
+    React.createElement("button", { className: "btn-log", disabled: !draft.trim(), onClick: () => onSave(draft.trim()) }, "Save key"), /*#__PURE__*/
+    React.createElement("button", { className: "btn-ghost", disabled: !draft.trim() || testState === "testing", onClick: test },
+    testState === "testing" ? "Testing…" : "Test connection"
+    )
+    ),
+    testState === "ok" && /*#__PURE__*/React.createElement("div", { className: "notice good" }, "Key works — TMDB answered."),
+    testState && testState !== "ok" && testState !== "testing" && /*#__PURE__*/React.createElement("div", { className: "notice error" }, testState)
+    ));
+
+}
+
+/* ---------------- authentication ---------------- */
+
+function AuthPage({ client }) {
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState(null);
+  const [error, setError] = useState(null);
+
+  const signIn = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    setError(null);
+    setMessage(null);
+    const { error: signInError } = await client.auth.signInWithPassword({ email: email.trim(), password });
+    if (signInError) setError(signInError.message);
+    setBusy(false);
+  };
+
+  const resetPassword = async () => {
+    if (!email.trim()) {
+      setError("Enter your email address first.");
+      return;
     }
+    setBusy(true);
+    setError(null);
+    const { error: resetError } = await client.auth.resetPasswordForEmail(email.trim(), {
+      redirectTo: window.location.origin + window.location.pathname
+    });
+    if (resetError) setError(resetError.message);else
+    setMessage("Password reset email sent.");
+    setBusy(false);
+  };
 
-    function SetPasswordPage({ client, onDone }) {
-      const [password, setPassword] = useState("");
-      const [confirm, setConfirm] = useState("");
-      const [busy, setBusy] = useState(false);
-      const [error, setError] = useState(null);
+  return (/*#__PURE__*/
+    React.createElement("div", { className: "mvd auth-shell" }, /*#__PURE__*/
+    React.createElement(StyleTag, null), /*#__PURE__*/
+    React.createElement("div", { className: "auth-brand" }, /*#__PURE__*/React.createElement(LogoMark, { size: 42 }), /*#__PURE__*/React.createElement("span", null, "MARQUEE")), /*#__PURE__*/
+    React.createElement("form", { className: "auth-card", onSubmit: signIn }, /*#__PURE__*/
+    React.createElement("div", { className: "eyebrow" }, "Private film circle"), /*#__PURE__*/
+    React.createElement("h1", null, "Welcome back"), /*#__PURE__*/
+    React.createElement("p", null, "Sign in with the account connected to your Marquee invitation."), /*#__PURE__*/
+    React.createElement("label", { className: "field" }, /*#__PURE__*/
+    React.createElement("span", null, "Email"), /*#__PURE__*/
+    React.createElement("input", { type: "text", inputMode: "email", autoComplete: "email", value: email, onChange: (e) => setEmail(e.target.value) })
+    ), /*#__PURE__*/
+    React.createElement("label", { className: "field" }, /*#__PURE__*/
+    React.createElement("span", null, "Password"), /*#__PURE__*/
+    React.createElement("input", { type: "password", autoComplete: "current-password", value: password, onChange: (e) => setPassword(e.target.value) })
+    ),
+    error && /*#__PURE__*/React.createElement("div", { className: "notice error" }, error),
+    message && /*#__PURE__*/React.createElement("div", { className: "notice good" }, message), /*#__PURE__*/
+    React.createElement("button", { className: "btn-log auth-submit", disabled: busy || !email.trim() || !password },
+    busy ? "Signing in…" : "Sign in"
+    ), /*#__PURE__*/
+    React.createElement("button", { className: "link auth-link", type: "button", onClick: resetPassword, disabled: busy }, "Forgot password?"), /*#__PURE__*/
+    React.createElement("p", { className: "auth-invite-note" }, "Marquee is invite-only. Ask the owner for an invitation if you don't have an account.")
+    )
+    ));
 
-      const save = async (e) => {
-        e.preventDefault();
-        if (password.length < 8) return setError("Use at least 8 characters.");
-        if (password !== confirm) return setError("The passwords don't match.");
-        setBusy(true);
-        setError(null);
-        const { error: updateError } = await client.auth.updateUser({ password });
-        if (updateError) setError(updateError.message);
-        else onDone();
-        setBusy(false);
-      };
+}
 
-      return (
-        <div className="mvd auth-shell">
-          <StyleTag />
-          <div className="auth-brand"><LogoMark size={42} /><span>MARQUEE</span></div>
-          <form className="auth-card" onSubmit={save}>
-            <div className="eyebrow">Invitation accepted</div>
-            <h1>Create your password</h1>
-            <p>Finish setting up your account to enter Marquee.</p>
-            <label className="field">
-              <span>New password</span>
-              <input type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
-            </label>
-            <label className="field">
-              <span>Confirm password</span>
-              <input type="password" autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
-            </label>
-            {error && <div className="notice error">{error}</div>}
-            <button className="btn-log auth-submit" disabled={busy || !password || !confirm}>
-              {busy ? "Saving…" : "Enter Marquee"}
-            </button>
-          </form>
-        </div>
-      );
-    }
+function SetPasswordPage({ client, onDone }) {
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState(null);
 
-    function AuthShell() {
-      const [session, setSession] = useState(null);
-      const [ready, setReady] = useState(false);
-      const [needsPassword, setNeedsPassword] = useState(AUTH_URL_TYPE === "invite" || AUTH_URL_TYPE === "recovery");
+  const save = async (e) => {
+    e.preventDefault();
+    if (password.length < 8) return setError("Use at least 8 characters.");
+    if (password !== confirm) return setError("The passwords don't match.");
+    setBusy(true);
+    setError(null);
+    const { error: updateError } = await client.auth.updateUser({ password });
+    if (updateError) setError(updateError.message);else
+    onDone();
+    setBusy(false);
+  };
 
-      useEffect(() => {
-        APP_CLIENT.auth.getSession().then(({ data }) => {
-          setSession(data.session || null);
-          setReady(true);
-        });
-        const { data: listener } = APP_CLIENT.auth.onAuthStateChange((event, nextSession) => {
-          setSession(nextSession);
-          if (event === "PASSWORD_RECOVERY") setNeedsPassword(true);
-          setReady(true);
-        });
-        return () => listener.subscription.unsubscribe();
-      }, []);
+  return (/*#__PURE__*/
+    React.createElement("div", { className: "mvd auth-shell" }, /*#__PURE__*/
+    React.createElement(StyleTag, null), /*#__PURE__*/
+    React.createElement("div", { className: "auth-brand" }, /*#__PURE__*/React.createElement(LogoMark, { size: 42 }), /*#__PURE__*/React.createElement("span", null, "MARQUEE")), /*#__PURE__*/
+    React.createElement("form", { className: "auth-card", onSubmit: save }, /*#__PURE__*/
+    React.createElement("div", { className: "eyebrow" }, "Invitation accepted"), /*#__PURE__*/
+    React.createElement("h1", null, "Create your password"), /*#__PURE__*/
+    React.createElement("p", null, "Finish setting up your account to enter Marquee."), /*#__PURE__*/
+    React.createElement("label", { className: "field" }, /*#__PURE__*/
+    React.createElement("span", null, "New password"), /*#__PURE__*/
+    React.createElement("input", { type: "password", autoComplete: "new-password", value: password, onChange: (e) => setPassword(e.target.value) })
+    ), /*#__PURE__*/
+    React.createElement("label", { className: "field" }, /*#__PURE__*/
+    React.createElement("span", null, "Confirm password"), /*#__PURE__*/
+    React.createElement("input", { type: "password", autoComplete: "new-password", value: confirm, onChange: (e) => setConfirm(e.target.value) })
+    ),
+    error && /*#__PURE__*/React.createElement("div", { className: "notice error" }, error), /*#__PURE__*/
+    React.createElement("button", { className: "btn-log auth-submit", disabled: busy || !password || !confirm },
+    busy ? "Saving…" : "Enter Marquee"
+    )
+    )
+    ));
 
-      const finishPassword = () => {
-        setNeedsPassword(false);
-        window.history.replaceState({}, document.title, window.location.pathname);
-      };
+}
 
-      const signOut = async () => {
-        await APP_CLIENT.auth.signOut();
-        setSession(null);
-      };
+function AuthShell() {
+  const [session, setSession] = useState(null);
+  const [ready, setReady] = useState(false);
+  const [needsPassword, setNeedsPassword] = useState(AUTH_URL_TYPE === "invite" || AUTH_URL_TYPE === "recovery");
 
-      if (!ready) {
-        return (
-          <div className="mvd"><StyleTag /><div className="app-loader"><LogoMark size={44} /><span>Checking your account…</span></div></div>
-        );
-      }
-      if (session && needsPassword) return <SetPasswordPage client={APP_CLIENT} onDone={finishPassword} />;
-      if (!session) return <AuthPage client={APP_CLIENT} />;
-      return <MovieDiary client={APP_CLIENT} user={session.user} onSignOut={signOut} />;
-    }
+  useEffect(() => {
+    APP_CLIENT.auth.getSession().then(({ data }) => {
+      setSession(data.session || null);
+      setReady(true);
+    });
+    const { data: listener } = APP_CLIENT.auth.onAuthStateChange((event, nextSession) => {
+      setSession(nextSession);
+      if (event === "PASSWORD_RECOVERY") setNeedsPassword(true);
+      setReady(true);
+    });
+    return () => listener.subscription.unsubscribe();
+  }, []);
 
-    /* ---------------- styles ---------------- */
+  const finishPassword = () => {
+    setNeedsPassword(false);
+    window.history.replaceState({}, document.title, window.location.pathname);
+  };
 
-    function StyleTag() {
-  return (
-    <style>{`
+  const signOut = async () => {
+    await APP_CLIENT.auth.signOut();
+    setSession(null);
+  };
+
+  if (!ready) {
+    return (/*#__PURE__*/
+      React.createElement("div", { className: "mvd" }, /*#__PURE__*/React.createElement(StyleTag, null), /*#__PURE__*/React.createElement("div", { className: "app-loader" }, /*#__PURE__*/React.createElement(LogoMark, { size: 44 }), /*#__PURE__*/React.createElement("span", null, "Checking your account…"))));
+
+  }
+  if (session && needsPassword) return /*#__PURE__*/React.createElement(SetPasswordPage, { client: APP_CLIENT, onDone: finishPassword });
+  if (!session) return /*#__PURE__*/React.createElement(AuthPage, { client: APP_CLIENT });
+  return /*#__PURE__*/React.createElement(MovieDiary, { client: APP_CLIENT, user: session.user, onSignOut: signOut });
+}
+
+/* ---------------- styles ---------------- */
+
+function StyleTag() {
+  return (/*#__PURE__*/
+    React.createElement("style", null, `
 .mvd {
   --bg: #0f1115;
   --surface: #181b21;
@@ -2838,13 +2841,12 @@ function IconPlus() {
   .mvd, .app-loader .logo-mark { animation: none; }
   .marquee-board { scroll-behavior: auto; }
 }
-    `}</style>
-  );
+    `));
+
 }
 
-    const root = ReactDOM.createRoot(document.getElementById("root"));
-    root.render(<AuthShell />);
-
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(/*#__PURE__*/React.createElement(AuthShell, null));
   </script>
 </body>
 
