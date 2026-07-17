@@ -191,40 +191,36 @@ function entryToRow(entry, userId) {
 
 /* ---------------- TMDB helpers ---------------- */
 
-function buildTmdb(apiKey) {
+function buildTmdb(client) {
   return async function tmdb(path, params = {}) {
-    if (!apiKey) throw new Error("NO_KEY");
-    const isBearer = apiKey.startsWith("eyJ"); // v4 read access token
-    const url = new URL("https://api.themoviedb.org/3" + path);
-    Object.entries(params).forEach(([k, v]) => {
-      if (v !== undefined && v !== null && v !== "") url.searchParams.set(k, v);
-    });
-    if (!isBearer) url.searchParams.set("api_key", apiKey);
-    let res;
     try {
-      res = await fetch(url.toString(), {
-        headers: isBearer ? { Authorization: "Bearer " + apiKey } : {}
+      const { data, error } = await client.functions.invoke("tmdb-proxy", {
+        body: { path, params }
       });
+      if (error) {
+        const status = error.context && error.context.status;
+        if (status === 429) throw new Error("RATE_LIMIT");
+        if (status === 401) throw new Error("SERVICE_AUTH");
+        throw new Error("SERVICE");
+      }
+      return data;
     } catch (e) {
+      if (["RATE_LIMIT", "SERVICE_AUTH", "SERVICE"].includes(e.message)) throw e;
       throw new Error("NETWORK");
     }
-    if (res.status === 401) throw new Error("BAD_KEY");
-    if (res.status === 429) throw new Error("RATE_LIMIT");
-    if (!res.ok) throw new Error("HTTP_" + res.status);
-    return res.json();
   };
 }
 
 function friendlyError(err) {
   switch (err.message) {
-    case "NO_KEY":
-      return "Add your TMDB API key in Settings to search for movies.";
-    case "BAD_KEY":
-      return "TMDB rejected that API key. Check it in Settings.";
+    case "SERVICE_AUTH":
+      return "Movie search needs attention. Ask the Marquee owner to check the TMDB connection.";
     case "RATE_LIMIT":
       return "TMDB is asking us to slow down. Wait a few seconds and try again.";
     case "NETWORK":
-      return "Couldn't reach TMDB. Check your connection and try again.";
+      return "Couldn't reach the movie service. Check your connection and try again.";
+    case "SERVICE":
+      return "Movie search is temporarily unavailable. Try again in a moment.";
     default:
       return "Something went wrong talking to TMDB. Try again in a moment.";
   }
@@ -552,7 +548,6 @@ function FilmFacts({ tmdb, movieId, overview }) {
 function MovieDiary({ client, user, onSignOut }) {
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(null);
-  const [apiKey, setApiKey] = useState("");
   const [entries, setEntries] = useState({});
   const [lists, setLists] = useState([]);
   const [movieCache, setMovieCache] = useState({});
@@ -564,7 +559,7 @@ function MovieDiary({ client, user, onSignOut }) {
   const [toast, setToast] = useState(null);
   const toastTimer = useRef(null);
 
-  const tmdb = useMemo(() => buildTmdb(apiKey), [apiKey]);
+  const tmdb = useMemo(() => buildTmdb(client), [client]);
 
   const notify = (msg) => {
     setToast(msg);
@@ -575,9 +570,6 @@ function MovieDiary({ client, user, onSignOut }) {
   const loadAccountData = useCallback(async () => {
     setLoaded(false);
     setLoadError(null);
-    const settings = await loadKey(STORE.settings, {});
-    setApiKey(settings.apiKey || "");
-
     const [entryResult, stateResult, profileResult] = await Promise.all([
     client.from("diary_entries").select("*").eq("user_id", user.id).order("watched_date", { ascending: false }),
     client.from("user_state").select("*").eq("user_id", user.id).single(),
@@ -685,13 +677,6 @@ function MovieDiary({ client, user, onSignOut }) {
       [id]: { title: movie.title, posterPath: movie.poster_path || null, releaseDate: movie.release_date || "" }
     });
   };
-  const persistKey = async (key) => {
-    setApiKey(key);
-    const settings = await loadKey(STORE.settings, {});
-    if (await saveKey(STORE.settings, { ...settings, apiKey: key })) notify("API key saved.");else
-    notify("Couldn't save the key — try again.");
-  };
-
   const saveProfile = async ({ username, displayName }) => {
     const cleanUsername = username.trim().toLowerCase().replace(/[^a-z0-9_]/g, "");
     if (cleanUsername.length < 3) return "Username must be at least 3 letters, numbers, or underscores.";
@@ -901,9 +886,6 @@ function MovieDiary({ client, user, onSignOut }) {
     view.name === "stats" && /*#__PURE__*/React.createElement(StatsPage, { entries: entryList }),
     view.name === "settings" && /*#__PURE__*/
     React.createElement(SettingsPage, {
-      apiKey: apiKey,
-      onSave: persistKey,
-      tmdb: tmdb,
       profile: profile,
       email: user.email,
       onSaveProfile: saveProfile,
@@ -944,16 +926,11 @@ function MovieDiary({ client, user, onSignOut }) {
     logOpen && /*#__PURE__*/
     React.createElement(LogModal, {
       tmdb: tmdb,
-      hasKey: !!apiKey,
       existing: entries,
       onClose: () => setLogOpen(false),
       onSave: async (entry) => {
         await addEntry(entry);
         setLogOpen(false);
-      },
-      goSettings: () => {
-        setLogOpen(false);
-        setView({ name: "settings" });
       } }
     ),
 
@@ -1307,7 +1284,7 @@ function FeedPage({ client, currentUserId }) {
 
 /* ---------------- log modal (search + form) ---------------- */
 
-function LogModal({ tmdb, hasKey, existing, onClose, onSave, goSettings }) {
+function LogModal({ tmdb, existing, onClose, onSave }) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [searching, setSearching] = useState(false);
@@ -1404,13 +1381,6 @@ function LogModal({ tmdb, hasKey, existing, onClose, onSave, goSettings }) {
     React.createElement("button", { className: "btn-ghost", onClick: onClose, "aria-label": "Close" }, "✕")
     ),
 
-    !hasKey && /*#__PURE__*/
-    React.createElement("div", { className: "notice" }, "You'll need a TMDB API key before searching.",
-    " ", /*#__PURE__*/
-    React.createElement("button", { className: "link", onClick: goSettings }, "Open Settings")
-    ),
-
-
     !picked && /*#__PURE__*/
     React.createElement(React.Fragment, null, /*#__PURE__*/
     React.createElement("input", {
@@ -1419,8 +1389,7 @@ function LogModal({ tmdb, hasKey, existing, onClose, onSave, goSettings }) {
       type: "search",
       placeholder: "Search TMDB by title…",
       value: query,
-      onChange: (e) => setQuery(e.target.value),
-      disabled: !hasKey }
+      onChange: (e) => setQuery(e.target.value) }
     ),
     error && /*#__PURE__*/React.createElement("div", { className: "notice error" }, error),
     searching && /*#__PURE__*/React.createElement("div", { className: "quiet-note" }, "Searching…"), /*#__PURE__*/
@@ -1448,7 +1417,7 @@ function LogModal({ tmdb, hasKey, existing, onClose, onSave, goSettings }) {
     )
     )
     ),
-    !searching && query && results.length === 0 && !error && hasKey && /*#__PURE__*/
+    !searching && query && results.length === 0 && !error && /*#__PURE__*/
     React.createElement("p", { className: "quiet-note" }, "No matches. Check the spelling or try a shorter title.")
 
     ),
@@ -2026,9 +1995,7 @@ function StatsPage({ entries }) {
 
 /* ---------------- settings ---------------- */
 
-function SettingsPage({ apiKey, onSave, tmdb, profile, email, onSaveProfile, onUploadAvatar, onImportLegacy, onSignOut, onOpenStats }) {
-  const [draft, setDraft] = useState(apiKey);
-  const [testState, setTestState] = useState(null);
+function SettingsPage({ profile, email, onSaveProfile, onUploadAvatar, onImportLegacy, onSignOut, onOpenStats }) {
   const [username, setUsername] = useState(profile ? profile.username : "");
   const [displayName, setDisplayName] = useState(profile ? profile.display_name : "");
   const [profileError, setProfileError] = useState(null);
@@ -2042,17 +2009,6 @@ function SettingsPage({ apiKey, onSave, tmdb, profile, email, onSaveProfile, onU
     setUsername(profile ? profile.username : "");
     setDisplayName(profile ? profile.display_name : "");
   }, [profile]);
-
-  const test = async () => {
-    setTestState("testing");
-    try {
-      const t = buildTmdb(draft.trim());
-      await t("/configuration", {});
-      setTestState("ok");
-    } catch (err) {
-      setTestState(friendlyError(err));
-    }
-  };
 
   const saveProfile = async () => {
     setSavingProfile(true);
@@ -2139,29 +2095,10 @@ function SettingsPage({ apiKey, onSave, tmdb, profile, email, onSaveProfile, onU
     importError && /*#__PURE__*/React.createElement("div", { className: "notice error" }, importError), /*#__PURE__*/
 
     React.createElement("h2", { className: "section-head" }, "Movie data"), /*#__PURE__*/
-    React.createElement("div", { className: "field" }, /*#__PURE__*/
-    React.createElement("span", null, "TMDB API key"), /*#__PURE__*/
-    React.createElement("input", {
-      type: "text",
-      value: draft,
-      onChange: (e) => {setDraft(e.target.value);setTestState(null);},
-      placeholder: "Paste your v3 API key or v4 read access token",
-      autoComplete: "off",
-      spellCheck: false }
-    ), /*#__PURE__*/
-    React.createElement("p", { className: "quiet-note" }, "Free from themoviedb.org — sign in, then Settings → API. Either the short v3 key or the long v4 token works here. It's stored only in this browser's local storage, on this device — never sent anywhere but TMDB."
-
+    React.createElement("p", { className: "quiet-note tmdb-credit" }, "Film data and images are supplied by ", /*#__PURE__*/
+    React.createElement("a", { href: "https://www.themoviedb.org", target: "_blank", rel: "noreferrer" }, "TMDB"), ". This product uses the TMDB API but is not endorsed or certified by TMDB."
 
     )
-    ), /*#__PURE__*/
-    React.createElement("div", { className: "row" }, /*#__PURE__*/
-    React.createElement("button", { className: "btn-log", disabled: !draft.trim(), onClick: () => onSave(draft.trim()) }, "Save key"), /*#__PURE__*/
-    React.createElement("button", { className: "btn-ghost", disabled: !draft.trim() || testState === "testing", onClick: test },
-    testState === "testing" ? "Testing…" : "Test connection"
-    )
-    ),
-    testState === "ok" && /*#__PURE__*/React.createElement("div", { className: "notice good" }, "Key works — TMDB answered."),
-    testState && testState !== "ok" && testState !== "testing" && /*#__PURE__*/React.createElement("div", { className: "notice error" }, testState)
     ));
 
 }
@@ -2779,6 +2716,8 @@ function StyleTag() {
 .avatar-upload.disabled { opacity: .55; pointer-events: none; }
 .profile-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
 .account-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.tmdb-credit { max-width: 480px; }
+.tmdb-credit a { color: var(--accent); }
 
 /* ---- authentication ---- */
 .auth-shell { min-height: 100vh; display: flex; flex-direction: column; align-items: center; padding: 9vh 18px 40px; }
