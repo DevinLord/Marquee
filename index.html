@@ -17,13 +17,17 @@
   <meta name="apple-mobile-web-app-title" content="Marquee" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://unpkg.com" crossorigin>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400..800&display=swap" rel="stylesheet">
   <style>
     html,
     body {
       margin: 0;
       padding: 0;
-      background: #0f1115;
+      background:
+        radial-gradient(ellipse 72% 28% at 50% 0%, rgba(142, 202, 230, .075), transparent 68%),
+        linear-gradient(180deg, #11141a 0%, #0f1115 48%);
       touch-action: manipulation;
       overscroll-behavior: none;
     }
@@ -43,6 +47,25 @@
       font-family: system-ui, sans-serif;
       letter-spacing: .04em;
       font-size: 14px;
+      animation: boot-reveal .35s ease-out both;
+    }
+
+    #boot-message svg {
+      animation: boot-breathe 1.25s ease-in-out infinite;
+    }
+
+    @keyframes boot-reveal {
+      from { opacity: 0; transform: translateY(5px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    @keyframes boot-breathe {
+      0%, 100% { opacity: .72; transform: scale(.985); }
+      50% { opacity: 1; transform: scale(1); }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      #boot-message, #boot-message svg { animation: none; }
     }
   </style>
 </head>
@@ -50,13 +73,13 @@
 <body>
   <div id="root">
     <div id="boot-message">
-      <svg width="48" height="44" viewBox="0 0 106 101" aria-hidden="true">
+      <svg width="44" height="42" viewBox="0 0 106 101" aria-hidden="true">
         <path d="M0 1H18V101H0Z" fill="#8ecae6" />
         <path d="M18 1L53 53L44 68L18 29Z" fill="#8ecae6" />
         <path d="M88 1L53 53L62 68L88 29Z" fill="#8ecae6" />
         <path d="M88 1H106V101H88Z" fill="#8ecae6" />
       </svg>
-      <span>Loading Marquee…</span>
+      <span>Opening Marquee…</span>
     </div>
   </div>
 
@@ -207,6 +230,43 @@
         default:
           return "Something went wrong talking to TMDB. Try again in a moment.";
       }
+    }
+
+    function makeAvatarBlob(file) {
+      return new Promise((resolve, reject) => {
+        if (!file || !file.type.startsWith("image/")) {
+          reject(new Error("Choose an image file."));
+          return;
+        }
+        if (file.size > 15 * 1024 * 1024) {
+          reject(new Error("Choose an image smaller than 15 MB."));
+          return;
+        }
+
+        const objectUrl = URL.createObjectURL(file);
+        const image = new Image();
+        image.onload = () => {
+          const side = Math.min(image.naturalWidth, image.naturalHeight);
+          const sourceX = (image.naturalWidth - side) / 2;
+          const sourceY = (image.naturalHeight - side) / 2;
+          const canvas = document.createElement("canvas");
+          canvas.width = 512;
+          canvas.height = 512;
+          const context = canvas.getContext("2d");
+          context.drawImage(image, sourceX, sourceY, side, side, 0, 0, 512, 512);
+          URL.revokeObjectURL(objectUrl);
+          canvas.toBlob(
+            (blob) => blob ? resolve(blob) : reject(new Error("That image couldn't be prepared.")),
+            "image/jpeg",
+            0.88
+          );
+        };
+        image.onerror = () => {
+          URL.revokeObjectURL(objectUrl);
+          reject(new Error("That image format isn't supported on this device."));
+        };
+        image.src = objectUrl;
+      });
     }
 
     /* ---------------- small utilities ---------------- */
@@ -649,6 +709,37 @@ function IconPlus() {
     return null;
   };
 
+  const uploadAvatar = async (file) => {
+    try {
+      const avatarBlob = await makeAvatarBlob(file);
+      const avatarPath = `${user.id}/avatar.jpg`;
+      const { error: uploadError } = await client.storage
+        .from("avatars")
+        .upload(avatarPath, avatarBlob, {
+          upsert: true,
+          contentType: "image/jpeg",
+          cacheControl: "3600",
+        });
+      if (uploadError) return uploadError.message;
+
+      const { data: publicData } = client.storage.from("avatars").getPublicUrl(avatarPath);
+      const avatarUrl = `${publicData.publicUrl}?v=${Date.now()}`;
+      const { data, error } = await client
+        .from("profiles")
+        .update({ avatar_url: avatarUrl, avatar_path: avatarPath })
+        .eq("id", user.id)
+        .select()
+        .single();
+      if (error) return error.message;
+      setProfile(data);
+      setFeedVersion((version) => version + 1);
+      notify("Profile picture updated.");
+      return null;
+    } catch (error) {
+      return error.message || "That picture couldn't be uploaded.";
+    }
+  };
+
   const importLegacyDiary = async () => {
     const local = {
       [STORE.entries]: await loadKey(STORE.entries, {}),
@@ -813,6 +904,7 @@ function IconPlus() {
                 profile={profile}
                 email={user.email}
                 onSaveProfile={saveProfile}
+                onUploadAvatar={uploadAvatar}
                 onImportLegacy={importLegacyDiary}
                 onSignOut={onSignOut}
                 onOpenStats={() => setView({ name: "stats" })}
@@ -1179,8 +1271,10 @@ function IconPlus() {
               return (
                 <article className="feed-entry" key={item.id}>
                   <div className="feed-person">
-                    <div className="avatar" aria-hidden="true">
-                      {(person.display_name || person.username || "?").slice(0, 1).toUpperCase()}
+                    <div className={"avatar" + (person.avatar_url ? " has-image" : "")} aria-hidden="true">
+                      {person.avatar_url
+                        ? <img src={person.avatar_url} alt="" loading="lazy" />
+                        : (person.display_name || person.username || "?").slice(0, 1).toUpperCase()}
                     </div>
                     <div>
                       <div className="feed-name">
@@ -1929,13 +2023,15 @@ function IconPlus() {
 
     /* ---------------- settings ---------------- */
 
-    function SettingsPage({ apiKey, onSave, tmdb, profile, email, onSaveProfile, onImportLegacy, onSignOut, onOpenStats }) {
+    function SettingsPage({ apiKey, onSave, tmdb, profile, email, onSaveProfile, onUploadAvatar, onImportLegacy, onSignOut, onOpenStats }) {
       const [draft, setDraft] = useState(apiKey);
       const [testState, setTestState] = useState(null);
       const [username, setUsername] = useState(profile ? profile.username : "");
       const [displayName, setDisplayName] = useState(profile ? profile.display_name : "");
       const [profileError, setProfileError] = useState(null);
       const [savingProfile, setSavingProfile] = useState(false);
+      const [uploadingAvatar, setUploadingAvatar] = useState(false);
+      const [avatarError, setAvatarError] = useState(null);
       const [importing, setImporting] = useState(false);
       const [importError, setImportError] = useState(null);
 
@@ -1963,6 +2059,17 @@ function IconPlus() {
         setSavingProfile(false);
       };
 
+      const chooseAvatar = async (event) => {
+        const file = event.target.files && event.target.files[0];
+        event.target.value = "";
+        if (!file) return;
+        setUploadingAvatar(true);
+        setAvatarError(null);
+        const error = await onUploadAvatar(file);
+        setAvatarError(error);
+        setUploadingAvatar(false);
+      };
+
       const importLegacy = async () => {
         if (!window.confirm("Import the old shared diary into this account? Existing account entries with the same movie will be updated.")) return;
         setImporting(true);
@@ -1977,12 +2084,21 @@ function IconPlus() {
           <h1 className="page-head">Profile</h1>
 
           <div className="profile-summary">
-            <div className="avatar large">{(displayName || username || email || "?").slice(0, 1).toUpperCase()}</div>
-            <div>
+            <div className={"avatar large" + (profile && profile.avatar_url ? " has-image" : "")}>
+              {profile && profile.avatar_url
+                ? <img src={profile.avatar_url} alt="Your profile picture" />
+                : (displayName || username || email || "?").slice(0, 1).toUpperCase()}
+            </div>
+            <div className="profile-summary-copy">
               <div className="profile-summary-name">{profile ? profile.display_name : "Marquee user"}</div>
               <div className="quiet-note">{email}</div>
+              <label className={"btn-ghost avatar-upload" + (uploadingAvatar ? " disabled" : "")}>
+                {uploadingAvatar ? "Uploading…" : profile && profile.avatar_url ? "Change picture" : "Add picture"}
+                <input type="file" accept="image/jpeg,image/png,image/webp" onChange={chooseAvatar} disabled={uploadingAvatar} />
+              </label>
             </div>
           </div>
+          {avatarError && <div className="notice error">{avatarError}</div>}
 
           <div className="profile-fields">
             <label className="field">
@@ -2217,6 +2333,7 @@ function IconPlus() {
   font-size: 15px;
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
+  animation: app-reveal .24s ease-out both;
 }
 .mvd *, .mvd *::before, .mvd *::after { box-sizing: border-box; }
 .mvd button { font-family: inherit; cursor: pointer; }
@@ -2305,8 +2422,17 @@ function IconPlus() {
 .stage { max-width: 1240px; margin: 0 auto; padding: 32px 22px 52px; }
 
 .app-loader {
-  min-height: 60vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+  min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
   font-family: var(--body); font-weight: 600; letter-spacing: .06em; color: var(--text-muted);
+}
+.app-loader .logo-mark { animation: app-loader-breathe 1.25s ease-in-out infinite; }
+@keyframes app-reveal {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes app-loader-breathe {
+  0%, 100% { opacity: .72; transform: scale(.985); }
+  50% { opacity: 1; transform: scale(1); }
 }
 
 /* ---- headings ---- */
@@ -2423,7 +2549,9 @@ function IconPlus() {
   background: var(--surface-raised); color: var(--accent); border: 1px solid var(--line);
   font-size: 12px; font-weight: 800;
 }
-.avatar.large { width: 54px; height: 54px; font-size: 18px; }
+.avatar.has-image { overflow: hidden; }
+.avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.avatar.large { width: 72px; height: 72px; font-size: 22px; }
 .feed-name { color: var(--text); font-size: 13px; font-weight: 750; }
 .feed-action { color: var(--text-muted); font-size: 11px; }
 .you-tag { color: var(--accent); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; margin-left: 8px; }
@@ -2641,7 +2769,11 @@ function IconPlus() {
 .settings { max-width: 560px; }
 .settings input { width: 100%; }
 .profile-summary { display: flex; align-items: center; gap: 14px; padding-bottom: 22px; border-bottom: 1px solid var(--line); margin-bottom: 22px; }
+.profile-summary-copy { min-width: 0; }
 .profile-summary-name { font-size: 17px; font-weight: 750; }
+.avatar-upload { display: inline-flex; margin-top: 10px; cursor: pointer; }
+.avatar-upload input { display: none; }
+.avatar-upload.disabled { opacity: .55; pointer-events: none; }
 .profile-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
 .account-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 
@@ -2678,7 +2810,21 @@ function IconPlus() {
   .grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; }
   .detail-poster { width: 100%; max-width: 300px; }
   .log-form-poster { width: 110px; }
-  .marquee-board { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); }
+  .marquee-board {
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: min(66vw, 230px);
+    gap: 14px;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scroll-snap-type: inline mandatory;
+    scrollbar-width: none;
+    margin-right: -14px;
+    padding: 3px 14px 8px 0;
+    -webkit-overflow-scrolling: touch;
+  }
+  .marquee-board::-webkit-scrollbar { display: none; }
+  .marquee-slot { scroll-snap-align: start; }
   .rank-controls { grid-template-columns: 1fr 1fr; }
   .rank-controls .btn-ghost { grid-column: 1 / -1; order: -1; }
   .feed-content { gap: 14px; }
@@ -2687,6 +2833,10 @@ function IconPlus() {
   .profile-fields { grid-template-columns: 1fr; }
   .auth-shell { padding-top: 7vh; }
   .auth-card { padding: 24px 20px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mvd, .app-loader .logo-mark { animation: none; }
+  .marquee-board { scroll-behavior: auto; }
 }
     `}</style>
   );
