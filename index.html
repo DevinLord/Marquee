@@ -3,9 +3,18 @@
 
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport"
+    content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>Marquee — a movie diary</title>
   <meta name="description" content="A personal, single-user movie diary powered by TMDB." />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="icon" href="icons/favicon-32.png" sizes="32x32" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+  <meta name="theme-color" content="#121317" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="Marquee" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Marcellus&family=Manrope:wght@200..800&display=swap"
@@ -16,6 +25,8 @@
       margin: 0;
       padding: 0;
       background: #121317;
+      touch-action: manipulation;
+      overscroll-behavior: none;
     }
 
     #root {
@@ -1764,7 +1775,7 @@
 /* ---- top bar ---- */
 .topbar {
   display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
-  padding: 12px 18px;
+  padding: calc(12px + env(safe-area-inset-top)) 18px 12px;
   border-bottom: 1px solid var(--line);
   background: rgba(18,19,23,.9);
   position: sticky; top: 0; z-index: 20;
