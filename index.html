@@ -10,21 +10,20 @@
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" href="icons/favicon-32.png" sizes="32x32" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
-  <meta name="theme-color" content="#121317" />
+  <meta name="theme-color" content="#0f1115" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="Marquee" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Marcellus&family=Manrope:wght@200..800&display=swap"
-    rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400..800&display=swap" rel="stylesheet">
   <style>
     html,
     body {
       margin: 0;
       padding: 0;
-      background: #121317;
+      background: #0f1115;
       touch-action: manipulation;
       overscroll-behavior: none;
     }
@@ -51,12 +50,13 @@
 <body>
   <div id="root">
     <div id="boot-message">
-      <svg width="44" height="44" viewBox="0 0 32 32" aria-hidden="true">
-        <rect x="1" y="1" width="30" height="30" rx="8" fill="#8ecae6" />
-        <path d="M8.5 22.5 V10.5 L16 17 L23.5 10.5 V22.5" fill="none" stroke="#12181d" stroke-width="3.4"
-          stroke-linecap="square" stroke-linejoin="miter" />
+      <svg width="48" height="44" viewBox="0 0 106 101" aria-hidden="true">
+        <path d="M0 1H18V101H0Z" fill="#8ecae6" />
+        <path d="M18 1L53 53L44 68L18 29Z" fill="#8ecae6" />
+        <path d="M88 1L53 53L62 68L88 29Z" fill="#8ecae6" />
+        <path d="M88 1H106V101H88Z" fill="#8ecae6" />
       </svg>
-      <span>Raising the curtain…</span>
+      <span>Loading Marquee…</span>
     </div>
   </div>
 
@@ -76,21 +76,19 @@
 
     /* ------------------------------------------------------------------
        MARQUEE — a personal movie diary
-       Design direction: "the movie palace after the house lights dim."
-       Deep velvet-blue night, ticket-paper cream, tarnished brass, and a
-       muted curtain crimson. Display type set like a title card
-       (Marcellus, letterspaced caps); body in Karla. Signature element:
-       diary entries rendered as ticket stubs with a perforated edge, and
-       the Top 5 set on a brass-numbered marquee.
+       Design direction: a precise, poster-forward cinematic archive.
+       Sharp geometry, restrained color, compact metadata, and clear
+       editorial hierarchy keep the interface focused on the films.
     ------------------------------------------------------------------- */
 
     const IMG = "https://image.tmdb.org/t/p/";
     const STORE = {
-      settings: "moviediary-settings",
-      entries: "moviediary-entries",
-      lists: "moviediary-lists",
-      top5: "moviediary-top5",
-    };
+  settings: "moviediary-settings",
+  entries: "moviediary-entries",
+  lists: "moviediary-lists",
+  top5: "moviediary-top5",
+  movieCache: "moviediary-movie-cache",
+};
 
     /* ---------------- storage helpers ----------------
        Standalone build: persists to this browser's localStorage instead of
@@ -241,8 +239,20 @@
     }
 
     function yearOf(entry) {
-      return entry.releaseDate ? entry.releaseDate.slice(0, 4) : "";
-    }
+  return entry.releaseDate ? entry.releaseDate.slice(0, 4) : "";
+}
+
+/* Lists can hold movies that aren't logged yet, so any place that needs to
+   show a title/poster/year for a list item checks the real diary entry
+   first (richer, and reflects your chosen poster), falling back to the
+   lightweight movie cache for anything only ever added to a list. */
+function resolveMovie(id, entries, movieCache) {
+  const e = entries[id];
+  if (e) return { id, title: e.title, posterPath: e.chosenPoster || e.posterPath, releaseDate: e.releaseDate, logged: true };
+  const c = movieCache[id];
+  if (c) return { id, title: c.title, posterPath: c.posterPath, releaseDate: c.releaseDate, logged: false };
+  return null;
+}
 
     function uid() {
       return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
@@ -301,21 +311,33 @@
       );
     }
 
-    function LogoMark({ size = 30 }) {
-      return (
-        <svg width={size} height={size} viewBox="0 0 32 32" aria-hidden="true">
-          <rect x="1" y="1" width="30" height="30" rx="8" fill="var(--brass)" />
-          <path
-            d="M8.5 22.5 V10.5 L16 17 L23.5 10.5 V22.5"
-            fill="none"
-            stroke="#12181d"
-            strokeWidth="3.4"
-            strokeLinecap="square"
-            strokeLinejoin="miter"
-          />
-        </svg>
-      );
-    }
+function LogoMark({ size = 30 }) {
+  return (
+    <svg className="logo-mark" width={size * 1.05} height={size} viewBox="0 0 106 101" aria-hidden="true">
+      <path d="M0 1H18V101H0Z" />
+      <path d="M18 1L53 53L44 68L18 29Z" />
+      <path d="M88 1L53 53L62 68L88 29Z" />
+      <path d="M88 1H106V101H88Z" />
+    </svg>
+  );
+}
+
+function IconEdit() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+    </svg>
+  );
+}
+
+function IconPlus() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden="true">
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
+    </svg>
+  );
+}
 
     const NAV_ITEMS = [
       { name: "diary", label: "Films", Icon: IconFilms },
@@ -482,178 +504,207 @@
     /* ---------------- main app ---------------- */
 
     function MovieDiary() {
-      const [loaded, setLoaded] = useState(false);
-      const [apiKey, setApiKey] = useState("");
-      const [syncUrl, setSyncUrl] = useState("");
-      const [syncKey, setSyncKey] = useState("");
-      const [syncStatus, setSyncStatus] = useState("off"); // 'off' | 'synced' | 'offline'
-      const [entries, setEntries] = useState({}); // tmdbId -> entry
-      const [lists, setLists] = useState([]); // {id, name, movieIds:[]}
-      const [top5, setTop5] = useState([null, null, null, null, null]);
-      const [view, setView] = useState({ name: "diary" });
-      const [logOpen, setLogOpen] = useState(false);
-      const [toast, setToast] = useState(null);
-      const toastTimer = useRef(null);
+  const [loaded, setLoaded] = useState(false);
+  const [apiKey, setApiKey] = useState("");
+  const [syncUrl, setSyncUrl] = useState("");
+  const [syncKey, setSyncKey] = useState("");
+  const [syncStatus, setSyncStatus] = useState("off"); // 'off' | 'synced' | 'offline'
+  const [entries, setEntries] = useState({}); // tmdbId -> entry
+  const [lists, setLists] = useState([]); // {id, name, movieIds:[]}
+  const [movieCache, setMovieCache] = useState({}); // tmdbId -> {title, posterPath, releaseDate}, for list-only movies
+  const [top5, setTop5] = useState([null, null, null, null, null]);
+  const [view, setView] = useState({ name: "diary" });
+  const [logOpen, setLogOpen] = useState(false);
+  const [toast, setToast] = useState(null);
+  const toastTimer = useRef(null);
 
-      const tmdb = useMemo(() => buildTmdb(apiKey), [apiKey]);
+  const tmdb = useMemo(() => buildTmdb(apiKey), [apiKey]);
 
-      /* load everything once, pulling from the cloud first if connected */
-      useEffect(() => {
-        (async () => {
-          const [settings, e, l, t] = await Promise.all([
-            loadKey(STORE.settings, {}),
-            loadKey(STORE.entries, {}),
-            loadKey(STORE.lists, []),
-            loadKey(STORE.top5, [null, null, null, null, null]),
-          ]);
-          setApiKey(settings.apiKey || "");
-          setSyncUrl(settings.supabaseUrl || "");
-          setSyncKey(settings.supabaseKey || "");
+  /* load everything once, pulling from the cloud first if connected */
+  useEffect(() => {
+    (async () => {
+      const [settings, e, l, t, mc] = await Promise.all([
+        loadKey(STORE.settings, {}),
+        loadKey(STORE.entries, {}),
+        loadKey(STORE.lists, []),
+        loadKey(STORE.top5, [null, null, null, null, null]),
+        loadKey(STORE.movieCache, {}),
+      ]);
+      setApiKey(settings.apiKey || "");
+      setSyncUrl(settings.supabaseUrl || "");
+      setSyncKey(settings.supabaseKey || "");
 
-          let finalEntries = e;
-          let finalLists = l;
-          let finalTop5 = Array.isArray(t) && t.length === 5 ? t : [null, null, null, null, null];
+      let finalEntries = e;
+      let finalLists = l;
+      let finalTop5 = Array.isArray(t) && t.length === 5 ? t : [null, null, null, null, null];
+      let finalMovieCache = mc;
 
-          if (settings.supabaseUrl && settings.supabaseKey) {
-            const cloud = await syncPullAll(settings.supabaseUrl, settings.supabaseKey);
-            if (cloud) {
-              if (cloud[STORE.entries] !== undefined) finalEntries = cloud[STORE.entries];
-              if (cloud[STORE.lists] !== undefined) finalLists = cloud[STORE.lists];
-              if (Array.isArray(cloud[STORE.top5]) && cloud[STORE.top5].length === 5) finalTop5 = cloud[STORE.top5];
-              setSyncStatus("synced");
-              // keep the local cache in step with what the cloud just gave us
-              saveKey(STORE.entries, finalEntries);
-              saveKey(STORE.lists, finalLists);
-              saveKey(STORE.top5, finalTop5);
-            } else {
-              setSyncStatus("offline");
-            }
-          }
-
-          setEntries(finalEntries);
-          setLists(finalLists);
-          setTop5(finalTop5);
-          setLoaded(true);
-        })();
-      }, []);
-
-      const notify = (msg) => {
-        setToast(msg);
-        window.clearTimeout(toastTimer.current);
-        toastTimer.current = window.setTimeout(() => setToast(null), 2600);
-      };
-
-      const pushToCloud = (storeKey, value) => {
-        if (!syncUrl || !syncKey) return;
-        syncPush(syncUrl, syncKey, storeKey, value).then((ok) => setSyncStatus(ok ? "synced" : "offline"));
-      };
-
-      /* persistence wrappers */
-      const persistEntries = async (next) => {
-        setEntries(next);
-        if (!(await saveKey(STORE.entries, next))) notify("Couldn't save — try again.");
-        pushToCloud(STORE.entries, next);
-      };
-      const persistLists = async (next) => {
-        setLists(next);
-        if (!(await saveKey(STORE.lists, next))) notify("Couldn't save — try again.");
-        pushToCloud(STORE.lists, next);
-      };
-      const persistTop5 = async (next) => {
-        setTop5(next);
-        if (!(await saveKey(STORE.top5, next))) notify("Couldn't save — try again.");
-        pushToCloud(STORE.top5, next);
-      };
-      const persistKey = async (key) => {
-        setApiKey(key);
-        const settings = await loadKey(STORE.settings, {});
-        if (await saveKey(STORE.settings, { ...settings, apiKey: key })) notify("API key saved.");
-        else notify("Couldn't save the key — try again.");
-      };
-
-      /* cloud sync connect / disconnect */
-      const connectSync = async (url, key) => {
-        const cloud = await syncPullAll(url, key);
-        if (cloud === null) {
-          notify("Couldn't reach that Supabase project. Check the URL/key and try again.");
-          return false;
-        }
-        const cloudHasData =
-          cloud[STORE.entries] !== undefined || cloud[STORE.lists] !== undefined || cloud[STORE.top5] !== undefined;
-
-        if (cloudHasData) {
-          // another device already seeded this project — pull it down
-          const nextEntries = cloud[STORE.entries] !== undefined ? cloud[STORE.entries] : {};
-          const nextLists = cloud[STORE.lists] !== undefined ? cloud[STORE.lists] : [];
-          const nextTop5 =
-            Array.isArray(cloud[STORE.top5]) && cloud[STORE.top5].length === 5
-              ? cloud[STORE.top5]
-              : [null, null, null, null, null];
-          await Promise.all([
-            saveKey(STORE.entries, nextEntries),
-            saveKey(STORE.lists, nextLists),
-            saveKey(STORE.top5, nextTop5),
-          ]);
-          setEntries(nextEntries);
-          setLists(nextLists);
-          setTop5(nextTop5);
-          notify("Connected — pulled your diary from the cloud.");
+      if (settings.supabaseUrl && settings.supabaseKey) {
+        const cloud = await syncPullAll(settings.supabaseUrl, settings.supabaseKey);
+        if (cloud) {
+          if (cloud[STORE.entries] !== undefined) finalEntries = cloud[STORE.entries];
+          if (cloud[STORE.lists] !== undefined) finalLists = cloud[STORE.lists];
+          if (Array.isArray(cloud[STORE.top5]) && cloud[STORE.top5].length === 5) finalTop5 = cloud[STORE.top5];
+          if (cloud[STORE.movieCache] !== undefined) finalMovieCache = cloud[STORE.movieCache];
+          setSyncStatus("synced");
+          // keep the local cache in step with what the cloud just gave us
+          saveKey(STORE.entries, finalEntries);
+          saveKey(STORE.lists, finalLists);
+          saveKey(STORE.top5, finalTop5);
+          saveKey(STORE.movieCache, finalMovieCache);
         } else {
-          // first device to connect this project — seed it with what's already here
-          await Promise.all([
-            syncPush(url, key, STORE.entries, entries),
-            syncPush(url, key, STORE.lists, lists),
-            syncPush(url, key, STORE.top5, top5),
-          ]);
-          notify("Connected — this device's diary is now the shared copy.");
+          setSyncStatus("offline");
         }
+      }
 
-        const settings = await loadKey(STORE.settings, {});
-        await saveKey(STORE.settings, { ...settings, supabaseUrl: url, supabaseKey: key });
-        setSyncUrl(url);
-        setSyncKey(key);
-        setSyncStatus("synced");
-        return true;
-      };
+      setEntries(finalEntries);
+      setLists(finalLists);
+      setTop5(finalTop5);
+      setMovieCache(finalMovieCache);
+      setLoaded(true);
+    })();
+  }, []);
 
-      const disconnectSync = async () => {
-        const settings = await loadKey(STORE.settings, {});
-        await saveKey(STORE.settings, { ...settings, supabaseUrl: "", supabaseKey: "" });
-        setSyncUrl("");
-        setSyncKey("");
-        setSyncStatus("off");
-        notify("Disconnected — this device keeps its own local copy from here.");
-      };
+  const notify = (msg) => {
+    setToast(msg);
+    window.clearTimeout(toastTimer.current);
+    toastTimer.current = window.setTimeout(() => setToast(null), 2600);
+  };
 
-      const entryList = useMemo(() => Object.values(entries), [entries]);
+  const pushToCloud = (storeKey, value) => {
+    if (!syncUrl || !syncKey) return;
+    syncPush(syncUrl, syncKey, storeKey, value).then((ok) => setSyncStatus(ok ? "synced" : "offline"));
+  };
 
-      const addEntry = async (entry) => {
-        await persistEntries({ ...entries, [entry.id]: entry });
-        notify(`Logged “${entry.title}.”`);
-      };
+  /* persistence wrappers */
+  const persistEntries = async (next) => {
+    setEntries(next);
+    if (!(await saveKey(STORE.entries, next))) notify("Couldn't save — try again.");
+    pushToCloud(STORE.entries, next);
+  };
+  const persistLists = async (next) => {
+    setLists(next);
+    if (!(await saveKey(STORE.lists, next))) notify("Couldn't save — try again.");
+    pushToCloud(STORE.lists, next);
+  };
+  const persistTop5 = async (next) => {
+    setTop5(next);
+    if (!(await saveKey(STORE.top5, next))) notify("Couldn't save — try again.");
+    pushToCloud(STORE.top5, next);
+  };
+  const persistMovieCache = async (next) => {
+    setMovieCache(next);
+    if (!(await saveKey(STORE.movieCache, next))) notify("Couldn't save — try again.");
+    pushToCloud(STORE.movieCache, next);
+  };
+  const cacheMovie = (movie) => {
+    // movie: a TMDB search-result-shaped object
+    const id = String(movie.id);
+    if (entries[id] || movieCache[id]) return; // already have richer or equal info
+    persistMovieCache({
+      ...movieCache,
+      [id]: { title: movie.title, posterPath: movie.poster_path || null, releaseDate: movie.release_date || "" },
+    });
+  };
+  const persistKey = async (key) => {
+    setApiKey(key);
+    const settings = await loadKey(STORE.settings, {});
+    if (await saveKey(STORE.settings, { ...settings, apiKey: key })) notify("API key saved.");
+    else notify("Couldn't save the key — try again.");
+  };
 
-      const updateEntry = async (id, patch) => {
-        if (!entries[id]) return;
-        await persistEntries({ ...entries, [id]: { ...entries[id], ...patch } });
-      };
+  /* cloud sync connect / disconnect */
+  const connectSync = async (url, key) => {
+    const cloud = await syncPullAll(url, key);
+    if (cloud === null) {
+      notify("Couldn't reach that Supabase project. Check the URL/key and try again.");
+      return false;
+    }
+    const cloudHasData =
+      cloud[STORE.entries] !== undefined ||
+      cloud[STORE.lists] !== undefined ||
+      cloud[STORE.top5] !== undefined ||
+      cloud[STORE.movieCache] !== undefined;
 
-      const deleteEntry = async (id) => {
-        const next = { ...entries };
-        delete next[id];
-        await persistEntries(next);
-        await persistLists(lists.map((l) => ({ ...l, movieIds: l.movieIds.filter((m) => m !== id) })));
-        await persistTop5(top5.map((m) => (m === id ? null : m)));
-        setView({ name: "diary" });
-        notify("Entry removed.");
-      };
+    if (cloudHasData) {
+      // another device already seeded this project — pull it down
+      const nextEntries = cloud[STORE.entries] !== undefined ? cloud[STORE.entries] : {};
+      const nextLists = cloud[STORE.lists] !== undefined ? cloud[STORE.lists] : [];
+      const nextTop5 =
+        Array.isArray(cloud[STORE.top5]) && cloud[STORE.top5].length === 5
+          ? cloud[STORE.top5]
+          : [null, null, null, null, null];
+      const nextMovieCache = cloud[STORE.movieCache] !== undefined ? cloud[STORE.movieCache] : {};
+      await Promise.all([
+        saveKey(STORE.entries, nextEntries),
+        saveKey(STORE.lists, nextLists),
+        saveKey(STORE.top5, nextTop5),
+        saveKey(STORE.movieCache, nextMovieCache),
+      ]);
+      setEntries(nextEntries);
+      setLists(nextLists);
+      setTop5(nextTop5);
+      setMovieCache(nextMovieCache);
+      notify("Connected — pulled your diary from the cloud.");
+    } else {
+      // first device to connect this project — seed it with what's already here
+      await Promise.all([
+        syncPush(url, key, STORE.entries, entries),
+        syncPush(url, key, STORE.lists, lists),
+        syncPush(url, key, STORE.top5, top5),
+        syncPush(url, key, STORE.movieCache, movieCache),
+      ]);
+      notify("Connected — this device's diary is now the shared copy.");
+    }
+
+    const settings = await loadKey(STORE.settings, {});
+    await saveKey(STORE.settings, { ...settings, supabaseUrl: url, supabaseKey: key });
+    setSyncUrl(url);
+    setSyncKey(key);
+    setSyncStatus("synced");
+    return true;
+  };
+
+  const disconnectSync = async () => {
+    const settings = await loadKey(STORE.settings, {});
+    await saveKey(STORE.settings, { ...settings, supabaseUrl: "", supabaseKey: "" });
+    setSyncUrl("");
+    setSyncKey("");
+    setSyncStatus("off");
+    notify("Disconnected — this device keeps its own local copy from here.");
+  };
+
+  const entryList = useMemo(() => Object.values(entries), [entries]);
+
+  const addEntry = async (entry) => {
+    await persistEntries({ ...entries, [entry.id]: entry });
+    notify(`Logged “${entry.title}.”`);
+  };
+
+  const updateEntry = async (id, patch) => {
+    if (!entries[id]) return;
+    await persistEntries({ ...entries, [id]: { ...entries[id], ...patch } });
+  };
+
+  const deleteEntry = async (id) => {
+    const next = { ...entries };
+    delete next[id];
+    await persistEntries(next);
+    await persistLists(lists.map((l) => ({ ...l, movieIds: l.movieIds.filter((m) => m !== id) })));
+    await persistTop5(top5.map((m) => (m === id ? null : m)));
+    setView({ name: "diary" });
+    notify("Entry removed.");
+  };
+
+  const activeNav = view.name === "detail" ? "diary" : view.name === "list" ? "lists" : view.name;
 
       if (!loaded) {
         return (
           <div className="mvd">
             <StyleTag />
-            <div className="loading-house">
+            <div className="app-loader">
               <LogoMark size={44} />
-              <span>Dimming the house lights…</span>
+              <span>Loading your films…</span>
             </div>
           </div>
         );
@@ -663,10 +714,25 @@
         <div className="mvd">
           <StyleTag />
           <header className="topbar">
-            <button className="topbar-logo" onClick={() => setView({ name: "diary" })} aria-label="Marquee home">
-              <LogoMark />
-            </button>
-            <button className="wordmark" onClick={() => setView({ name: "diary" })}>MARQUEE</button>
+            <div className="topbar-inner">
+              <button className="brand" onClick={() => setView({ name: "diary" })} aria-label="Marquee home">
+                <LogoMark size={26} />
+                <span>MARQUEE</span>
+              </button>
+              <nav className="desktop-nav" aria-label="Main">
+                {NAV_ITEMS.map(({ name, label }) => (
+                  <button
+                    key={name}
+                    className={activeNav === name ? "active" : ""}
+                    aria-current={activeNav === name ? "page" : undefined}
+                    onClick={() => setView({ name })}
+                  >
+                    {label}
+                  </button>
+                ))}
+                <button className="desktop-log" onClick={() => setLogOpen(true)}>Log</button>
+              </nav>
+            </div>
           </header>
 
           <main className="stage">
@@ -702,24 +768,28 @@
             )}
             {view.name === "lists" && (
               <ListsPage
-                lists={lists}
-                entries={entries}
-                onCreate={(name) => persistLists([...lists, { id: uid(), name, movieIds: [] }])}
-                onOpen={(id) => setView({ name: "list", id })}
-                onDelete={(id) => persistLists(lists.filter((l) => l.id !== id))}
-              />
-            )}
-            {view.name === "list" && (
-              <ListDetail
-                list={lists.find((l) => l.id === view.id)}
-                entries={entries}
-                onBack={() => setView({ name: "lists" })}
-                onOpenMovie={(id) => setView({ name: "detail", id })}
-                onUpdate={(patch) =>
-                  persistLists(lists.map((l) => (l.id === view.id ? { ...l, ...patch } : l)))
-                }
-              />
-            )}
+            lists={lists}
+            entries={entries}
+            movieCache={movieCache}
+            onCreate={(name) => persistLists([...lists, { id: uid(), name, movieIds: [] }])}
+            onOpen={(id) => setView({ name: "list", id })}
+            onDelete={(id) => persistLists(lists.filter((l) => l.id !== id))}
+          />
+        )}
+        {view.name === "list" && (
+          <ListDetail
+            list={lists.find((l) => l.id === view.id)}
+            entries={entries}
+            movieCache={movieCache}
+            tmdb={tmdb}
+            onCacheMovie={cacheMovie}
+            onBack={() => setView({ name: "lists" })}
+            onOpenMovie={(id) => setView({ name: "detail", id })}
+            onUpdate={(patch) =>
+              persistLists(lists.map((l) => (l.id === view.id ? { ...l, ...patch } : l)))
+            }
+          />
+        )}
             {view.name === "stats" && <StatsPage entries={entryList} />}
             {view.name === "settings" && (
               <SettingsPage
@@ -739,21 +809,21 @@
             {NAV_ITEMS.slice(0, 2).map(({ name, label }) => (
               <button
                 key={name}
-                className={"tab-link" + (view.name === name ? " active" : "")}
-                aria-current={view.name === name ? "page" : undefined}
+                className={"tab-link" + (activeNav === name ? " active" : "")}
+                aria-current={activeNav === name ? "page" : undefined}
                 onClick={() => setView({ name })}
               >
                 <span className="tab-label">{label}</span>
               </button>
             ))}
             <button className="tab-link-log" onClick={() => setLogOpen(true)} aria-label="Log a movie">
-              <span className="tab-link-log-plus">+</span>
+              <span className="tab-link-log-label">Log</span>
             </button>
             {NAV_ITEMS.slice(2).map(({ name, label }) => (
               <button
                 key={name}
-                className={"tab-link" + (view.name === name ? " active" : "")}
-                aria-current={view.name === name ? "page" : undefined}
+                className={"tab-link" + (activeNav === name ? " active" : "")}
+                aria-current={activeNav === name ? "page" : undefined}
                 onClick={() => setView({ name })}
               >
                 <span className="tab-label">{label}</span>
@@ -788,6 +858,7 @@
     function Top5Strip({ top5, entries, onChange, onOpenMovie }) {
       const [pickingSlot, setPickingSlot] = useState(null);
       const [filter, setFilter] = useState("");
+      const [editing, setEditing] = useState(false);
 
       const candidates = useMemo(
         () =>
@@ -815,28 +886,45 @@
 
       return (
         <div className="top5-strip">
+          <div className="top5-head">
+            <div>
+              <div className="eyebrow">Personal ranking</div>
+              <h2>Your Top 5</h2>
+            </div>
+            <button
+              className={"btn-ghost" + (editing ? " active" : "")}
+              onClick={() => setEditing((value) => !value)}
+              aria-pressed={editing}
+            >
+              {editing ? "Done" : "Edit"}
+            </button>
+          </div>
           <ol className="marquee-board">
             {top5.map((id, idx) => {
               const e = id ? entries[id] : null;
               const p = e ? e.chosenPoster || e.posterPath : null;
               return (
                 <li className={"marquee-slot" + (e ? " filled" : "")} key={idx}>
+                  <span className="marquee-rank" aria-hidden="true">{String(idx + 1).padStart(2, "0")}</span>
                   {e ? (
                     <>
                       <button className="marquee-poster" onClick={() => onOpenMovie(id)} aria-label={`Open ${e.title}`}>
                         {p ? <img src={IMG + "w342" + p} alt="" loading="lazy" /> : <div className="poster-blank"><span>{e.title}</span></div>}
                       </button>
                       <div className="marquee-title">{e.title}</div>
-                      <div className="row-btns center">
-                        <button className="btn-ghost" onClick={() => move(idx, -1)} disabled={idx === 0} aria-label="Move up in ranking">↑</button>
-                        <button className="btn-ghost" onClick={() => move(idx, 1)} disabled={idx === 4} aria-label="Move down in ranking">↓</button>
-                        <button className="btn-ghost" onClick={() => setPickingSlot(idx)} aria-label={`Replace number ${idx + 1}`}>swap</button>
-                        <button className="btn-ghost danger" onClick={() => setSlot(idx, null)} aria-label={`Clear number ${idx + 1}`}>✕</button>
-                      </div>
+                      {editing && (
+                        <div className="rank-controls">
+                          <button className="icon-btn" onClick={() => move(idx, -1)} disabled={idx === 0} aria-label="Move up in ranking">←</button>
+                          <button className="icon-btn" onClick={() => move(idx, 1)} disabled={idx === 4} aria-label="Move down in ranking">→</button>
+                          <button className="btn-ghost" onClick={() => setPickingSlot(idx)} aria-label={`Replace number ${idx + 1}`}>Replace</button>
+                          <button className="icon-btn danger" onClick={() => setSlot(idx, null)} aria-label={`Clear number ${idx + 1}`}>✕</button>
+                        </div>
+                      )}
                     </>
                   ) : (
                     <button className="marquee-empty" onClick={() => setPickingSlot(idx)} aria-label={`Pick film number ${idx + 1}`}>
-                      Pick a film
+                      <IconPlus />
+                      <span>Pick a film</span>
                     </button>
                   )}
                 </li>
@@ -927,9 +1015,9 @@
         return (
           <section>
             <div className="empty-house">
-              <div className="empty-mark" aria-hidden="true">✦</div>
-              <h2>Nothing on the marquee yet</h2>
-              <p>Log the first movie you've watched and your films start here.</p>
+              <div className="empty-mark" aria-hidden="true">01</div>
+              <h2>Nothing logged yet</h2>
+              <p>Log the first movie you've watched to start your film archive.</p>
               <button className="btn-log" onClick={onLog}>+ Log a movie</button>
             </div>
           </section>
@@ -938,23 +1026,26 @@
 
       return (
         <section>
-          <div className="top-tabs" role="tablist" aria-label="Films view">
-            <button
-              role="tab"
-              aria-selected={tab === "all"}
-              className={"top-tab" + (tab === "all" ? " active" : "")}
-              onClick={() => setTab("all")}
-            >
-              All
-            </button>
-            <button
-              role="tab"
-              aria-selected={tab === "top5"}
-              className={"top-tab" + (tab === "top5" ? " active" : "")}
-              onClick={() => setTab("top5")}
-            >
-              Top 5
-            </button>
+          <div className="films-head">
+            <h1 className="page-head">Films</h1>
+            <div className="top-tabs" role="tablist" aria-label="Films view">
+              <button
+                role="tab"
+                aria-selected={tab === "all"}
+                className={"top-tab" + (tab === "all" ? " active" : "")}
+                onClick={() => setTab("all")}
+              >
+                Films
+              </button>
+              <button
+                role="tab"
+                aria-selected={tab === "top5"}
+                className={"top-tab" + (tab === "top5" ? " active" : "")}
+                onClick={() => setTab("top5")}
+              >
+                Top 5
+              </button>
+            </div>
           </div>
 
           {tab === "top5" ? (
@@ -1111,7 +1202,7 @@
         <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
           <div className="modal" role="dialog" aria-modal="true" aria-label="Log a movie">
             <div className="modal-head">
-              <h2>{picked ? "Now showing" : "Log a movie"}</h2>
+              <h2>{picked ? "Movie details" : "Log a movie"}</h2>
               <button className="btn-ghost" onClick={onClose} aria-label="Close">✕</button>
             </div>
 
@@ -1406,127 +1497,229 @@
 
     /* ---------------- lists ---------------- */
 
-    function ListsPage({ lists, entries, onCreate, onOpen, onDelete }) {
-      const [name, setName] = useState("");
-      const [confirm, setConfirm] = useState(null);
+    function ListsPage({ lists, entries, movieCache, onCreate, onOpen, onDelete }) {
+  const [name, setName] = useState("");
+  const [confirm, setConfirm] = useState(null);
 
-      return (
-        <section>
-          <h1 className="page-head">Lists</h1>
-          <div className="row list-create">
-            <input
-              type="text"
-              placeholder="New list — e.g. Best of 2026"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              onKeyDown={(e) => { if (e.key === "Enter" && name.trim()) { onCreate(name.trim()); setName(""); } }}
-            />
-            <button className="btn-log" disabled={!name.trim()} onClick={() => { onCreate(name.trim()); setName(""); }}>
-              Create list
-            </button>
-          </div>
+  return (
+    <section>
+      <h1 className="page-head">Lists</h1>
+      <div className="row list-create">
+        <input
+          type="text"
+          placeholder="New list — e.g. Best of 2026"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter" && name.trim()) { onCreate(name.trim()); setName(""); } }}
+        />
+        <button className="btn-log" disabled={!name.trim()} onClick={() => { onCreate(name.trim()); setName(""); }}>
+          Create list
+        </button>
+      </div>
 
-          {lists.length === 0 && (
-            <p className="quiet-note">No lists yet. Make one for anything — a year's best, a rewatch pile, a director run.</p>
-          )}
+      {lists.length === 0 && (
+        <p className="quiet-note">No lists yet. Make one for anything — a year's best, a rewatch pile, a director run.</p>
+      )}
 
-          <div className="list-cards">
-            {lists.map((l) => {
-              const covers = l.movieIds.slice(0, 4).map((id) => entries[id]).filter(Boolean);
-              return (
-                <div className="list-card" key={l.id}>
-                  <button className="list-card-open" onClick={() => onOpen(l.id)}>
-                    <div className="list-covers" aria-hidden="true">
-                      {covers.length === 0 && <div className="thumb-blank" />}
-                      {covers.map((e) => {
-                        const p = e.chosenPoster || e.posterPath;
-                        return p ? <img key={e.id} src={IMG + "w92" + p} alt="" loading="lazy" /> : <div className="thumb-blank" key={e.id} />;
-                      })}
-                    </div>
-                    <div>
-                      <div className="list-name">{l.name}</div>
-                      <div className="quiet-note">{l.movieIds.length} {l.movieIds.length === 1 ? "movie" : "movies"}</div>
-                    </div>
-                  </button>
-                  {confirm === l.id ? (
-                    <div className="row">
-                      <button className="btn-danger" onClick={() => { onDelete(l.id); setConfirm(null); }}>Delete</button>
-                      <button className="btn-ghost" onClick={() => setConfirm(null)}>Keep</button>
-                    </div>
-                  ) : (
-                    <button className="btn-ghost danger" onClick={() => setConfirm(l.id)} aria-label={`Delete list ${l.name}`}>✕</button>
+      <div className="list-cards">
+        {lists.map((l) => {
+          const covers = l.movieIds.slice(0, 4).map((id) => resolveMovie(id, entries, movieCache)).filter(Boolean);
+          return (
+            <div className="list-card" key={l.id}>
+              <button className="list-card-open" onClick={() => onOpen(l.id)}>
+                <div className="list-covers" aria-hidden="true">
+                  {covers.length === 0 && <div className="thumb-blank" />}
+                  {covers.map((m) =>
+                    m.posterPath ? (
+                      <img key={m.id} src={IMG + "w92" + m.posterPath} alt="" loading="lazy" />
+                    ) : (
+                      <div className="thumb-blank" key={m.id} />
+                    )
                   )}
                 </div>
-              );
-            })}
-          </div>
-        </section>
-      );
-    }
-
-    function ListDetail({ list, entries, onBack, onOpenMovie, onUpdate }) {
-      const [renaming, setRenaming] = useState(false);
-      const [nameDraft, setNameDraft] = useState(list ? list.name : "");
-
-      if (!list) return <p className="quiet-note">That list is gone.</p>;
-
-      const move = (idx, dir) => {
-        const next = [...list.movieIds];
-        const j = idx + dir;
-        if (j < 0 || j >= next.length) return;
-        [next[idx], next[j]] = [next[j], next[idx]];
-        onUpdate({ movieIds: next });
-      };
-
-      return (
-        <section>
-          <button className="btn-ghost back" onClick={onBack}>← Lists</button>
-          {renaming ? (
-            <div className="row">
-              <input type="text" value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} />
-              <button className="btn-log" onClick={() => { onUpdate({ name: nameDraft.trim() || list.name }); setRenaming(false); }}>Save</button>
+                <div>
+                  <div className="list-name">{l.name}</div>
+                  <div className="quiet-note">{l.movieIds.length} {l.movieIds.length === 1 ? "movie" : "movies"}</div>
+                </div>
+              </button>
+              {confirm === l.id ? (
+                <div className="row">
+                  <button className="btn-danger" onClick={() => { onDelete(l.id); setConfirm(null); }}>Delete</button>
+                  <button className="btn-ghost" onClick={() => setConfirm(null)}>Keep</button>
+                </div>
+              ) : (
+                <button className="btn-ghost danger" onClick={() => setConfirm(l.id)} aria-label={`Delete list ${l.name}`}>✕</button>
+              )}
             </div>
-          ) : (
-            <h1 className="page-head">
-              {list.name}{" "}
-              <button className="btn-ghost" onClick={() => { setNameDraft(list.name); setRenaming(true); }}>Rename</button>
-            </h1>
-          )}
+          );
+        })}
+      </div>
+    </section>
+  );
+}
 
-          {list.movieIds.length === 0 && (
-            <p className="quiet-note">Empty so far. Open any movie in your films and use “Add to a list.”</p>
-          )}
+    function ListDetail({ list, entries, movieCache, tmdb, onCacheMovie, onBack, onOpenMovie, onUpdate }) {
+  const [renaming, setRenaming] = useState(false);
+  const [nameDraft, setNameDraft] = useState(list ? list.name : "");
+  const [adding, setAdding] = useState(false);
+  const [query, setQuery] = useState("");
+  const [results, setResults] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState(null);
+  const searchRef = useRef(null);
+  const timer = useRef(null);
 
-          <ol className="list-rows">
-            {list.movieIds.map((id, idx) => {
-              const e = entries[id];
-              if (!e) return null;
-              const p = e.chosenPoster || e.posterPath;
-              return (
-                <li className="list-row" key={id}>
-                  <span className="list-row-num">{idx + 1}</span>
-                  <button className="list-row-main" onClick={() => onOpenMovie(id)}>
-                    {p ? <img src={IMG + "w92" + p} alt="" loading="lazy" /> : <div className="thumb-blank" />}
-                    <span className="result-title">{e.title}</span>
-                    <span className="result-year">{yearOf(e)}</span>
-                    <StarDisplay value={e.rating} size={12} />
-                  </button>
-                  <div className="row-btns">
-                    <button className="btn-ghost" onClick={() => move(idx, -1)} disabled={idx === 0} aria-label={`Move ${e.title} up`}>↑</button>
-                    <button className="btn-ghost" onClick={() => move(idx, 1)} disabled={idx === list.movieIds.length - 1} aria-label={`Move ${e.title} down`}>↓</button>
-                    <button
-                      className="btn-ghost danger"
-                      aria-label={`Remove ${e.title} from list`}
-                      onClick={() => onUpdate({ movieIds: list.movieIds.filter((m) => m !== id) })}
-                    >✕</button>
-                  </div>
-                </li>
-              );
-            })}
-          </ol>
-        </section>
-      );
+  useEffect(() => {
+    if (adding && searchRef.current) searchRef.current.focus();
+  }, [adding]);
+
+  useEffect(() => {
+    if (!adding) return;
+    window.clearTimeout(timer.current);
+    if (!query.trim()) {
+      setResults([]);
+      setSearchError(null);
+      return;
     }
+    timer.current = window.setTimeout(async () => {
+      setSearching(true);
+      setSearchError(null);
+      try {
+        const data = await tmdb("/search/movie", { query: query.trim(), include_adult: "false" });
+        setResults((data.results || []).slice(0, 12));
+      } catch (err) {
+        setSearchError(friendlyError(err));
+        setResults([]);
+      } finally {
+        setSearching(false);
+      }
+    }, 400);
+    return () => window.clearTimeout(timer.current);
+  }, [query, adding, tmdb]);
+
+  if (!list) return <p className="quiet-note">That list is gone.</p>;
+
+  const move = (idx, dir) => {
+    const next = [...list.movieIds];
+    const j = idx + dir;
+    if (j < 0 || j >= next.length) return;
+    [next[idx], next[j]] = [next[j], next[idx]];
+    onUpdate({ movieIds: next });
+  };
+
+  const addMovie = (movie) => {
+    const id = String(movie.id);
+    onCacheMovie(movie);
+    if (!list.movieIds.includes(id)) {
+      onUpdate({ movieIds: [...list.movieIds, id] });
+    }
+  };
+
+  const closeAdding = () => {
+    setAdding(false);
+    setQuery("");
+    setResults([]);
+    setSearchError(null);
+  };
+
+  return (
+    <section>
+      <button className="btn-ghost back" onClick={onBack}>← Lists</button>
+      {renaming ? (
+        <div className="row">
+          <input type="text" value={nameDraft} onChange={(e) => setNameDraft(e.target.value)} autoFocus />
+          <button className="btn-log" onClick={() => { onUpdate({ name: nameDraft.trim() || list.name }); setRenaming(false); }}>Save</button>
+        </div>
+      ) : (
+        <h1 className="page-head list-head">
+          <span>{list.name}</span>
+          <span className="list-head-actions">
+            <button className="icon-btn" onClick={() => { setNameDraft(list.name); setRenaming(true); }} aria-label="Rename list">
+              <IconEdit />
+            </button>
+            <button className="icon-btn" onClick={() => setAdding(true)} aria-label="Add films to this list">
+              <IconPlus />
+            </button>
+          </span>
+        </h1>
+      )}
+
+      {list.movieIds.length === 0 && (
+        <p className="quiet-note">Empty so far. Tap + above to search for and add any film.</p>
+      )}
+
+      <ol className="list-rows">
+        {list.movieIds.map((id, idx) => {
+          const m = resolveMovie(id, entries, movieCache);
+          if (!m) return null;
+          return (
+            <li className="list-row" key={id}>
+              <span className="list-row-num">{idx + 1}</span>
+              <button className="list-row-main" onClick={() => onOpenMovie(id)} disabled={!m.logged}>
+                {m.posterPath ? <img src={IMG + "w92" + m.posterPath} alt="" loading="lazy" /> : <div className="thumb-blank" />}
+                <span className="result-title">{m.title}</span>
+                <span className="result-year">{yearOf(m)}</span>
+                {m.logged ? <StarDisplay value={entries[id].rating} size={12} /> : <span className="result-flag">not logged</span>}
+              </button>
+              <div className="row-btns">
+                <button className="btn-ghost" onClick={() => move(idx, -1)} disabled={idx === 0} aria-label={`Move ${m.title} up`}>↑</button>
+                <button className="btn-ghost" onClick={() => move(idx, 1)} disabled={idx === list.movieIds.length - 1} aria-label={`Move ${m.title} down`}>↓</button>
+                <button
+                  className="btn-ghost danger"
+                  aria-label={`Remove ${m.title} from list`}
+                  onClick={() => onUpdate({ movieIds: list.movieIds.filter((x) => x !== id) })}
+                >✕</button>
+              </div>
+            </li>
+          );
+        })}
+      </ol>
+
+      {adding && (
+        <div className="overlay" onMouseDown={(e) => e.target === e.currentTarget && closeAdding()}>
+          <div className="modal" role="dialog" aria-modal="true" aria-label="Add films to list">
+            <div className="modal-head">
+              <h2>Add to &ldquo;{list.name}&rdquo;</h2>
+              <button className="btn-ghost" onClick={closeAdding} aria-label="Close">✕</button>
+            </div>
+            <input
+              ref={searchRef}
+              className="search-big"
+              type="search"
+              placeholder="Search TMDB by title…"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            {searchError && <div className="notice error">{searchError}</div>}
+            {searching && <div className="quiet-note">Searching…</div>}
+            <ul className="results">
+              {results.map((r) => {
+                const already = list.movieIds.includes(String(r.id));
+                return (
+                  <li key={r.id}>
+                    <button className="result" onClick={() => addMovie(r)}>
+                      {r.poster_path ? (
+                        <img src={IMG + "w92" + r.poster_path} alt="" loading="lazy" />
+                      ) : (
+                        <div className="thumb-blank" />
+                      )}
+                      <span className="result-title">{r.title}</span>
+                      <span className="result-year">{r.release_date ? r.release_date.slice(0, 4) : ""}</span>
+                      {already && <span className="result-flag">added</span>}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+            {!searching && query && results.length === 0 && !searchError && (
+              <p className="quiet-note">No matches. Check the spelling or try a shorter title.</p>
+            )}
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
 
     function StatsPage({ entries }) {
       const stats = useMemo(() => {
@@ -1599,7 +1792,7 @@
             </div>
           </div>
 
-          <h2 className="section-head">Movies per month</h2>
+          <h2 className="section-head">Movies by month</h2>
           <div className="bar-chart" role="img" aria-label="Movies watched per month over the last year">
             {stats.months.map((m) => (
               <div className="bar-col" key={m.key}>
@@ -1611,17 +1804,20 @@
           </div>
 
           <h2 className="section-head">Ratings</h2>
-          <div className="rating-dist">
+          <div className="rating-histogram" role="img" aria-label="Rating distribution from half a star to five stars">
             {[0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5].map((r) => {
               const c = stats.ratingDist[r] || 0;
               const max = Math.max(1, ...Object.values(stats.ratingDist));
               return (
-                <div className="dist-row" key={r}>
-                  <span className="dist-label">{r}★</span>
-                  <div className="dist-track">
-                    <div className="dist-bar" style={{ width: (c / max) * 100 + "%" }} />
+                <div className="rating-column" key={r} aria-label={`${r} stars: ${c} movies`}>
+                  <span className="rating-count">{c || ""}</span>
+                  <div className="rating-track">
+                    <div
+                      className="rating-bar"
+                      style={{ height: Math.max(2, (c / max) * 120) + "px" }}
+                    />
                   </div>
-                  <span className="dist-count">{c || ""}</span>
+                  <span className="rating-label">{r}</span>
                 </div>
               );
             })}
@@ -1744,172 +1940,190 @@
     function StyleTag() {
   return (
     <style>{`
-@import url('https://fonts.googleapis.com/css2?family=Marcellus&family=Manrope:wght@200..800&display=swap');
-
 .mvd {
-  --night: #121317;
-  --velvet: #1b1d23;
-  --velvet-2: #24262d;
-  --brass: #8ecae6;
-  --brass-dim: #6a9cbd;
-  --curtain: #e5484d;
-  --paper: #f4f2ee;
-  --paper-dim: #9298a3;
-  --line: rgba(255,255,255,.08);
+  --bg: #0f1115;
+  --surface: #181b21;
+  --surface-raised: #22262e;
+  --accent: #8ecae6;
+  --accent-muted: #6a9cbd;
+  --danger: #e5484d;
+  --text: #f1f3f5;
+  --text-muted: #9aa3ad;
+  --line: rgba(255,255,255,.11);
 
-  --display: 'Marcellus', 'Palatino Linotype', Georgia, serif;
   --body: 'Manrope', 'Segoe UI', system-ui, sans-serif;
 
-  background: var(--night);
-  color: var(--paper);
+  background:
+    radial-gradient(ellipse 72% 28% at 50% 0%, rgba(142,202,230,.075), transparent 68%),
+    linear-gradient(180deg, #11141a 0%, var(--bg) 48%);
+  color: var(--text);
   font-family: var(--body);
   min-height: 100vh;
   font-size: 15px;
   line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
 }
 .mvd *, .mvd *::before, .mvd *::after { box-sizing: border-box; }
 .mvd button { font-family: inherit; cursor: pointer; }
-.mvd :focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; border-radius: 0; }
+.mvd :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 0; }
 .mvd img { display: block; }
 
 /* ---- top bar ---- */
 .topbar {
-  display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
-  padding: calc(12px + env(safe-area-inset-top)) 18px 12px;
   border-bottom: 1px solid var(--line);
-  background: rgba(18,19,23,.9);
+  background: rgba(18,21,27,.94);
   position: sticky; top: 0; z-index: 20;
-  backdrop-filter: blur(8px);
+  backdrop-filter: blur(10px);
 }
-.topbar-logo {
-  grid-column: 1; justify-self: start;
-  background: none; border: none; padding: 0; display: flex; align-items: center;
+.topbar-inner {
+  width: 100%; max-width: 1240px; margin: 0 auto;
+  padding: calc(10px + env(safe-area-inset-top)) 22px 10px;
+  display: flex; align-items: center; justify-content: space-between; gap: 30px;
 }
-.wordmark {
-  grid-column: 2; justify-self: center;
-  background: none; border: none; color: var(--brass);
-  font-family: var(--body); font-weight: 800; font-size: 21px; letter-spacing: -.01em;
-  line-height: 1.1; padding: 0;
+.brand {
+  background: none; border: none; color: var(--accent); padding: 0;
+  display: flex; align-items: center; gap: 10px; flex-shrink: 0;
+  font-weight: 800; font-size: 17px; letter-spacing: .12em; line-height: 1;
 }
+.logo-mark { fill: var(--accent); flex-shrink: 0; }
+.desktop-nav { display: flex; align-items: center; align-self: stretch; gap: 24px; }
+.desktop-nav button {
+  align-self: stretch; background: none; border: none; border-bottom: 2px solid transparent;
+  color: var(--text-muted); padding: 0; font-size: 10px; font-weight: 700;
+  letter-spacing: .1em; text-transform: uppercase;
+}
+.desktop-nav button:hover { color: var(--text); }
+.desktop-nav button.active { color: var(--text); border-bottom-color: var(--accent); }
+.desktop-nav .desktop-log {
+  align-self: center; background: var(--accent); color: #0f151a;
+  border: none; padding: 9px 17px;
+}
+.desktop-nav .desktop-log:hover { background: #a8d9ef; color: #0f151a; }
+.desktop-nav .desktop-log:focus-visible { outline-offset: 3px; }
 
 /* ---- bottom tab bar ---- */
 .bottombar {
   position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
-  display: flex; align-items: center; justify-content: space-around;
-  background: rgba(18,19,23,.96);
+  display: none; align-items: center; justify-content: space-around;
+  background: rgba(15,17,21,.96);
   border-top: 1px solid var(--line);
-  backdrop-filter: blur(8px);
-  padding: 6px 4px calc(6px + env(safe-area-inset-bottom));
+  backdrop-filter: blur(14px);
+  padding: 5px 4px calc(5px + env(safe-area-inset-bottom));
 }
 .tab-link {
-  background: none; border: none; color: var(--paper-dim);
+  background: none; border: none; color: var(--text-muted);
   display: flex; align-items: center; justify-content: center;
-  padding: 10px 8px; flex: 1; max-width: 96px;
+  padding: 13px 8px; flex: 1; max-width: 112px;
 }
-.tab-link .tab-label { font-size: 11.5px; letter-spacing: .04em; font-weight: 700; text-transform: uppercase; }
-.tab-link:hover { color: var(--paper); }
-.tab-link.active { color: var(--brass); }
+.tab-link .tab-label { font-size: 10px; letter-spacing: .1em; font-weight: 700; text-transform: uppercase; }
+.tab-link:hover { color: var(--text); }
+.tab-link.active { color: var(--accent); }
 .tab-link-log {
-  background: var(--brass); color: #12181d; border: none;
-  width: 44px; height: 44px; border-radius: 0; flex-shrink: 0;
+  background: var(--accent); color: #0f151a; border: none;
+  width: 58px; height: 38px; border-radius: 0; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center;
-  margin: 0 6px;
-  box-shadow: 0 3px 12px rgba(142,202,230,.35);
+  margin: 0 8px;
 }
 .tab-link-log:hover { background: #a8d9ef; }
-.tab-link-log-plus { font-size: 25px; font-weight: 400; line-height: 1; margin-top: -2px; }
+.tab-link-log-label { font-size: 10px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
 
 .btn-log {
-  background: var(--brass); color: #12181d; border: none;
+  background: var(--accent); color: #12181d; border: none;
   font-weight: 700; font-size: 13px; letter-spacing: .02em;
   padding: 10px 18px; border-radius: 0;
 }
 .btn-log:hover:not(:disabled) { background: #a8d9ef; }
 .btn-log:disabled { opacity: .45; cursor: default; }
 .btn-ghost {
-  background: none; border: 1px solid var(--line); color: var(--paper-dim);
+  background: none; border: 1px solid var(--line); color: var(--text-muted);
   font-size: 13px; font-weight: 600; padding: 7px 12px; border-radius: 0;
 }
-.btn-ghost:hover:not(:disabled) { color: var(--paper); border-color: var(--brass-dim); }
+.btn-ghost:hover:not(:disabled) { color: var(--text); border-color: var(--accent-muted); }
 .btn-ghost:disabled { opacity: .35; cursor: default; }
-.btn-ghost.danger:hover { color: #f0898d; border-color: var(--curtain); }
+.btn-ghost.danger:hover { color: #f0898d; border-color: var(--danger); }
 .btn-danger {
-  background: var(--curtain); color: var(--paper); border: none;
+  background: var(--danger); color: var(--text); border: none;
   font-size: 13px; font-weight: 600; padding: 8px 14px; border-radius: 0;
 }
-.link { background: none; border: none; color: var(--brass); text-decoration: underline; padding: 0; font-size: inherit; }
+.link { background: none; border: none; color: var(--accent); text-decoration: underline; padding: 0; font-size: inherit; }
 
-.stage { max-width: 1180px; margin: 0 auto; padding: 22px 18px calc(88px + env(safe-area-inset-bottom)); }
+.stage { max-width: 1240px; margin: 0 auto; padding: 32px 22px 52px; }
 
-.loading-house {
+.app-loader {
   min-height: 60vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
-  font-family: var(--body); font-weight: 600; letter-spacing: .06em; color: var(--paper-dim);
+  font-family: var(--body); font-weight: 600; letter-spacing: .06em; color: var(--text-muted);
 }
 
 /* ---- headings ---- */
 .page-head {
-  font-family: var(--body); font-weight: 800; font-size: 22px;
-  letter-spacing: -.01em; color: var(--paper);
-  margin: 6px 0 18px;
+  font-family: var(--body); font-weight: 800; font-size: clamp(24px, 4vw, 34px);
+  letter-spacing: -.04em; color: var(--text);
+  margin: 0 0 22px;
 }
 .section-head {
-  font-family: var(--body); font-weight: 700; font-size: 13px;
-  letter-spacing: .1em; text-transform: uppercase; color: var(--brass);
+  font-family: var(--body); font-weight: 700; font-size: 12px;
+  letter-spacing: .14em; text-transform: uppercase; color: var(--text-muted);
   border-bottom: 1px solid var(--line); padding-bottom: 8px; margin: 38px 0 14px;
 }
 .film-title { font-family: var(--body); font-weight: 800; font-size: 21px; margin: 0 0 10px; letter-spacing: -.01em; }
 .film-title.big { font-size: 27px; }
-.film-year { color: var(--paper-dim); font-weight: 500; font-size: .68em; letter-spacing: .04em; }
-.quiet-note { color: var(--paper-dim); font-size: 13px; }
-.quiet-note em, .field em { color: var(--paper-dim); font-style: italic; font-size: 12px; }
+.film-year { color: var(--text-muted); font-weight: 500; font-size: .68em; letter-spacing: .04em; }
+.quiet-note { color: var(--text-muted); font-size: 13px; }
+.quiet-note em, .field em { color: var(--text-muted); font-style: italic; font-size: 12px; }
 
-/* ---- top tabs (Films view) ---- */
+/* ---- films header and view tabs ---- */
+.films-head {
+  display: flex; align-items: flex-end; justify-content: space-between; gap: 24px;
+  border-bottom: 1px solid var(--line); margin-bottom: 22px;
+}
+.films-head .page-head { margin-bottom: 13px; }
 .top-tabs {
-  display: inline-flex; gap: 2px; padding: 3px;
-  background: var(--velvet); border-radius: 0;
-  margin-bottom: 20px;
+  display: inline-flex; align-self: stretch; gap: 24px;
 }
 .top-tab {
-  background: none; border: none; color: var(--paper-dim);
-  font-family: var(--body); font-weight: 700; font-size: 13px;
-  padding: 7px 18px; border-radius: 0;
+  background: none; border: none; color: var(--text-muted);
+  border-bottom: 2px solid transparent;
+  font-family: var(--body); font-weight: 700; font-size: 11px;
+  letter-spacing: .1em; text-transform: uppercase;
+  padding: 4px 0 11px; border-radius: 0;
 }
-.top-tab.active { background: var(--velvet-2); color: var(--paper); }
-.top-tab:hover:not(.active) { color: var(--paper); }
+.top-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+.top-tab:hover:not(.active) { color: var(--text); }
 
 /* ---- top 5 strip (Films tab) ---- */
 .top5-strip { margin-bottom: 10px; }
+.top5-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 18px; margin: 6px 0 22px; }
+.top5-head h2 { font-size: 22px; letter-spacing: -.025em; margin: 2px 0 0; }
+.eyebrow { color: var(--accent); font-size: 10px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+.btn-ghost.active { color: var(--bg); background: var(--accent); border-color: var(--accent); }
 
 /* ---- collapsed controls (Films tab) ---- */
 .controls-collapsed { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 18px; }
 .pill-select {
-  background: var(--velvet); color: var(--paper);
+  background: transparent; color: var(--text);
   border: 1px solid var(--line); border-radius: 0;
   padding: 7px 12px; font-size: 12.5px; font-weight: 600; max-width: 150px;
 }
 .icon-btn {
-  background: var(--velvet); border: 1px solid var(--line); color: var(--paper-dim);
+  background: transparent; border: 1px solid var(--line); color: var(--text-muted);
   width: 32px; height: 32px; border-radius: 0; flex-shrink: 0;
   display: flex; align-items: center; justify-content: center; padding: 0;
 }
 .icon-btn svg { width: 16px; height: 16px; }
-.icon-btn:hover { color: var(--paper); border-color: var(--brass-dim); }
+.icon-btn:hover { color: var(--text); border-color: var(--accent-muted); }
+.icon-btn:disabled { opacity: .3; cursor: default; }
+.icon-btn.danger:hover { color: #f0898d; border-color: var(--danger); }
 .search-expand { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 140px; }
 .search-expand input { flex: 1; border-radius: 0; padding: 7px 14px; font-size: 13px; }
-.controls-collapsed .count { color: var(--paper-dim); font-size: 11.5px; margin-left: auto; }
+.controls-collapsed .count { color: var(--text-muted); font-size: 11.5px; margin-left: auto; }
 
-/* ---- controls row (legacy, still used by unaffected pages) ---- */
-.controls { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 22px; }
-.ctrl { display: flex; flex-direction: column; gap: 4px; font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--paper-dim); }
-.ctrl.grow { flex: 1; min-width: 180px; }
-.count { color: var(--paper-dim); font-size: 12px; padding-bottom: 9px; margin-left: auto; }
 .mvd select, .mvd input[type="search"], .mvd input[type="text"], .mvd input[type="date"], .mvd textarea {
-  background: var(--velvet); color: var(--paper);
+  background: var(--surface); color: var(--text);
   border: 1px solid var(--line); border-radius: 0;
   padding: 8px 10px; font-family: var(--body); font-size: 14px;
 }
 .mvd textarea { resize: vertical; width: 100%; }
-.mvd select:focus, .mvd input:focus, .mvd textarea:focus { border-color: var(--brass); outline: none; }
+.mvd select:focus, .mvd input:focus, .mvd textarea:focus { border-color: var(--accent); outline: none; }
 
 /* ---- film cards (poster-forward, no chrome) ---- */
 .grid {
@@ -1922,26 +2136,30 @@
 }
 .film-card-poster {
   aspect-ratio: 2/3; border-radius: 0; overflow: hidden;
-  background: var(--velvet-2);
-  transition: transform .15s ease;
+  background: var(--surface-raised);
+  outline: 1px solid rgba(255,255,255,.07); outline-offset: -1px;
+  transition: transform .16s ease, outline-color .16s ease;
 }
 .film-card-poster img { width: 100%; height: 100%; object-fit: cover; }
-.film-card:hover .film-card-poster { transform: translateY(-3px); }
+.film-card:hover .film-card-poster, .film-card:focus-visible .film-card-poster {
+  transform: translateY(-3px); outline-color: var(--accent);
+}
 @media (prefers-reduced-motion: reduce) {
   .film-card-poster, .film-card:hover .film-card-poster { transition: none; transform: none; }
 }
 .film-card-title {
-  font-family: var(--body); font-weight: 600; font-size: 13px; letter-spacing: -.005em;
+  font-family: var(--body); font-weight: 650; font-size: 13px; letter-spacing: -.01em;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-  color: var(--paper-dim);
+  color: var(--text-muted);
 }
+.film-card:hover .film-card-title { color: var(--text); }
 .film-card-meta { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
-.film-card-date { color: var(--paper-dim); font-size: 10.5px; }
+.film-card-date { color: var(--text-muted); font-size: 10.5px; }
 
 .poster-blank {
   width: 100%; height: 100%; min-height: 120px;
   display: grid; place-items: center; text-align: center;
-  background: var(--velvet-2); color: var(--paper-dim);
+  background: var(--surface-raised); color: var(--text-muted);
   font-family: var(--body); font-weight: 600; padding: 10px;
 }
 .poster-blank.tall { aspect-ratio: 2/3; }
@@ -1952,19 +2170,19 @@
 .star-empty { color: rgba(244,242,238,.16); }
 .star-fill {
   position: absolute; left: 0; top: 0; overflow: hidden; white-space: nowrap;
-  color: var(--brass); pointer-events: none;
+  color: var(--accent); pointer-events: none;
 }
 .star-input { gap: 0; cursor: pointer; border-radius: 0; padding: 2px; }
 .half-hit { position: absolute; top: 0; height: 100%; width: 50%; opacity: 0; border: none; background: none; padding: 0; }
 .half-hit.left { left: 0; }
 .half-hit.right { right: 0; }
-.star-num { margin-left: 8px; font-size: 13px; color: var(--paper-dim); min-width: 26px; }
+.star-num { margin-left: 8px; font-size: 13px; color: var(--text-muted); min-width: 26px; }
 
 /* ---- empty state ---- */
-.empty-house { text-align: center; padding: 90px 20px; }
-.empty-mark { color: var(--brass); font-size: 26px; margin-bottom: 14px; }
+.empty-house { text-align: left; max-width: 480px; padding: 90px 0; }
+.empty-mark { color: var(--accent); font-size: 12px; font-weight: 800; letter-spacing: .14em; margin-bottom: 14px; }
 .empty-house h2 { font-family: var(--body); font-weight: 800; letter-spacing: -.01em; }
-.empty-house p { color: var(--paper-dim); margin-bottom: 22px; }
+.empty-house p { color: var(--text-muted); margin-bottom: 22px; }
 
 /* ---- modal ---- */
 .overlay {
@@ -1973,31 +2191,31 @@
   padding: 6vh 16px 16px; overflow-y: auto;
 }
 .modal {
-  background: var(--velvet); border: 1px solid var(--line); border-radius: 0;
+  background: var(--surface); border: 1px solid var(--line); border-radius: 0;
   width: 100%; max-width: 640px; padding: 20px 22px 24px;
   box-shadow: 0 20px 60px rgba(0,0,0,.5);
 }
 .modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; }
-.modal-head h2 { font-family: var(--body); font-weight: 800; font-size: 17px; margin: 0; color: var(--paper); }
+.modal-head h2 { font-family: var(--body); font-weight: 800; font-size: 17px; margin: 0; color: var(--text); }
 .search-big { width: 100%; font-size: 16px; padding: 12px 14px; margin-bottom: 12px; }
 .results { list-style: none; margin: 0; padding: 0; max-height: 46vh; overflow-y: auto; }
 .result {
   display: flex; align-items: center; gap: 12px; width: 100%;
   background: none; border: none; border-bottom: 1px solid var(--line);
-  padding: 8px 6px; text-align: left; color: var(--paper);
+  padding: 8px 6px; text-align: left; color: var(--text);
 }
-.result:hover { background: var(--velvet-2); }
-.result img, .thumb-blank { width: 38px; height: 57px; object-fit: cover; border-radius: 0; background: var(--velvet-2); flex-shrink: 0; }
+.result:hover { background: var(--surface-raised); }
+.result img, .thumb-blank { width: 38px; height: 57px; object-fit: cover; border-radius: 0; background: var(--surface-raised); flex-shrink: 0; }
 .result-title { font-size: 14.5px; font-weight: 500; }
-.result-year { color: var(--paper-dim); font-size: 12.5px; }
-.result-flag { margin-left: auto; font-size: 11px; font-weight: 600; color: var(--brass); letter-spacing: .04em; text-transform: uppercase; }
+.result-year { color: var(--text-muted); font-size: 12.5px; }
+.result-flag { margin-left: auto; font-size: 11px; font-weight: 600; color: var(--accent); letter-spacing: .04em; text-transform: uppercase; }
 
 .notice {
-  background: var(--velvet-2); border: 1px solid var(--line);
+  background: var(--surface-raised); border: 1px solid var(--line);
   border-radius: 0; padding: 10px 12px; font-size: 13.5px; margin: 10px 0;
 }
-.notice.error { border-color: var(--curtain); }
-.notice.good { border-color: var(--brass); color: var(--brass); }
+.notice.error { border-color: var(--danger); }
+.notice.good { border-color: var(--accent); color: var(--accent); }
 
 /* ---- log form ---- */
 .log-form { display: flex; gap: 20px; flex-wrap: wrap; }
@@ -2006,11 +2224,10 @@
 .poster-change-btn { width: 100%; }
 .log-form-fields { flex: 1; min-width: 240px; display: flex; flex-direction: column; gap: 14px; }
 .field { display: flex; flex-direction: column; gap: 6px; }
-.field > span { font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--paper-dim); }
+.field > span { font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; color: var(--text-muted); }
 .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .row-end { display: flex; gap: 10px; justify-content: flex-end; flex-wrap: wrap; }
 .row-btns { display: flex; gap: 6px; }
-.row-btns.center { justify-content: center; }
 
 /* ---- detail ---- */
 .back { margin-bottom: 16px; }
@@ -2018,19 +2235,19 @@
 .detail-poster { width: 280px; flex-shrink: 0; }
 .detail-poster img { width: 100%; border-radius: 0; }
 .detail-info { flex: 1; min-width: 280px; display: flex; flex-direction: column; gap: 18px; }
-.detail-facts { display: flex; gap: 16px; color: var(--paper-dim); font-size: 13px; flex-wrap: wrap; }
+.detail-facts { display: flex; gap: 16px; color: var(--text-muted); font-size: 13px; flex-wrap: wrap; }
 .film-facts { display: flex; flex-direction: column; gap: 10px; margin: 2px 0 4px; }
-.film-plot { color: var(--paper); font-size: 14px; line-height: 1.55; max-width: 62ch; margin: 0; }
-.film-credit { font-size: 13.5px; color: var(--paper); margin: 0; }
+.film-plot { color: var(--text); font-size: 14px; line-height: 1.55; max-width: 62ch; margin: 0; }
+.film-credit { font-size: 13.5px; color: var(--text); margin: 0; }
 .film-credit-label {
   font-size: 11px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase;
-  color: var(--paper-dim); margin-right: 6px;
+  color: var(--text-muted); margin-right: 6px;
 }
 .film-cast { display: flex; flex-direction: column; gap: 6px; }
 .film-cast-list { display: flex; flex-wrap: wrap; gap: 6px; }
 .cast-chip {
-  background: var(--velvet); border: 1px solid var(--line); border-radius: 0;
-  padding: 4px 11px; font-size: 12px; color: var(--paper);
+  background: var(--surface); border: 1px solid var(--line); border-radius: 0;
+  padding: 4px 11px; font-size: 12px; color: var(--text);
 }
 .review-text { white-space: pre-wrap; margin: 0 0 8px; max-width: 60ch; }
 .danger-zone { margin-top: 8px; padding-top: 14px; border-top: 1px solid var(--line); }
@@ -2042,14 +2259,14 @@
   padding: 0; position: relative; overflow: hidden;
 }
 .poster-option img { width: 100%; border-radius: 0; }
-.poster-option:hover { border-color: var(--brass-dim); }
-.poster-option.active { border-color: var(--brass); }
+.poster-option:hover { border-color: var(--accent-muted); }
+.poster-option.active { border-color: var(--accent); }
 .poster-lang {
   position: absolute; bottom: 4px; right: 4px;
-  background: rgba(18,19,23,.85); color: var(--paper);
+  background: rgba(18,19,23,.85); color: var(--text);
   font-size: 10px; font-weight: 600; letter-spacing: .04em; padding: 2px 6px; border-radius: 0;
 }
-.poster-option.active .poster-lang { color: var(--brass); }
+.poster-option.active .poster-lang { color: var(--accent); }
 
 /* ---- lists ---- */
 .list-create { margin-bottom: 26px; }
@@ -2057,20 +2274,23 @@
 .list-cards { display: flex; flex-direction: column; gap: 12px; }
 .list-card {
   display: flex; align-items: center; gap: 12px;
-  background: var(--velvet); border: 1px solid var(--line); border-radius: 0;
-  padding: 12px 14px;
+  background: transparent; border: none; border-bottom: 1px solid var(--line); border-radius: 0;
+  padding: 12px 2px 16px;
 }
-.list-card-open { display: flex; align-items: center; gap: 16px; flex: 1; background: none; border: none; color: var(--paper); text-align: left; padding: 0; }
+.list-card-open { display: flex; align-items: center; gap: 16px; flex: 1; background: none; border: none; color: var(--text); text-align: left; padding: 0; }
 .list-covers { display: flex; }
-.list-covers img, .list-covers .thumb-blank { width: 34px; height: 51px; border-radius: 0; margin-right: -10px; border: 1px solid var(--night); }
+.list-covers img, .list-covers .thumb-blank { width: 34px; height: 51px; border-radius: 0; margin-right: -10px; border: 1px solid var(--bg); }
 .list-name { font-family: var(--body); font-weight: 700; font-size: 16px; }
+.list-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.list-head-actions { display: flex; gap: 8px; flex-shrink: 0; }
 .list-rows { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .list-row {
   display: flex; align-items: center; gap: 12px;
-  background: var(--velvet); border: 1px solid var(--line); border-radius: 0; padding: 8px 12px;
+  background: transparent; border: none; border-bottom: 1px solid var(--line); border-radius: 0; padding: 8px 2px 12px;
 }
-.list-row-num { font-family: var(--body); font-weight: 700; color: var(--brass); width: 22px; text-align: right; }
-.list-row-main { display: flex; align-items: center; gap: 12px; flex: 1; background: none; border: none; color: var(--paper); text-align: left; padding: 0; }
+.list-row-num { font-family: var(--body); font-weight: 700; color: var(--accent); width: 22px; text-align: right; }
+.list-row-main { display: flex; align-items: center; gap: 12px; flex: 1; background: none; border: none; color: var(--text); text-align: left; padding: 0; }
+.list-row-main:disabled { cursor: default; opacity: .7; }
 .list-row-main img { width: 34px; height: 51px; object-fit: cover; border-radius: 0; }
 
 /* ---- top 5 ---- */
@@ -2079,9 +2299,18 @@
   display: grid; gap: 20px;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
 }
-.marquee-slot { display: flex; flex-direction: column; gap: 8px; }
-.marquee-poster { background: none; border: none; border-radius: 0; padding: 0; width: 100%; overflow: hidden; }
-.marquee-poster img { width: 100%; aspect-ratio: 2/3; object-fit: cover; border-radius: 0; }
+.marquee-slot { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.marquee-rank {
+  color: var(--accent); font-size: 11px; font-weight: 800; letter-spacing: .12em;
+  border-top: 2px solid var(--accent); padding-top: 6px;
+}
+.marquee-poster { background: none; border: none; border-radius: 0; padding: 0; width: 100%; overflow: visible; }
+.marquee-poster img {
+  width: 100%; aspect-ratio: 2/3; object-fit: cover; border-radius: 0;
+  outline: 1px solid rgba(255,255,255,.07); outline-offset: -1px;
+  transition: transform .16s ease, outline-color .16s ease;
+}
+.marquee-poster:hover img, .marquee-poster:focus-visible img { transform: translateY(-3px); outline-color: var(--accent); }
 .marquee-title {
   font-family: var(--body); font-weight: 600; font-size: 13px; text-align: left;
   line-height: 1.3; min-height: 2.6em;
@@ -2089,32 +2318,44 @@
 }
 .marquee-empty {
   width: 100%; aspect-ratio: 2/3;
-  background: var(--velvet); color: var(--paper-dim);
+  background: transparent; color: var(--text-muted);
   border: 1px solid var(--line); border-radius: 0;
-  font-family: var(--body); font-weight: 600; font-size: 13px;
+  font-family: var(--body); font-weight: 600; font-size: 12px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px;
 }
-.marquee-empty:hover { color: var(--brass); border-color: var(--brass-dim); }
+.marquee-empty svg { width: 20px; height: 20px; }
+.marquee-empty:hover { color: var(--accent); border-color: var(--accent-muted); }
+.rank-controls { display: grid; grid-template-columns: 32px 32px 1fr 32px; gap: 5px; }
+.rank-controls .btn-ghost { padding: 6px 8px; font-size: 11px; }
 
 /* ---- stats ---- */
 .stat-cards { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
 .stat-card {
-  background: var(--velvet); border: 1px solid var(--line); border-radius: 0;
-  padding: 18px; text-align: center;
+  background: transparent; border: none; border-top: 2px solid var(--line); border-radius: 0;
+  padding: 16px 0 18px; text-align: left;
 }
-.stat-num { font-family: var(--body); font-weight: 800; font-size: 34px; color: var(--brass); line-height: 1.1; }
+.stat-card:first-child { border-top-color: var(--accent); }
+.stat-num { font-family: var(--body); font-weight: 800; font-size: 34px; color: var(--text); line-height: 1.1; letter-spacing: -.04em; }
 .stat-num.small { font-size: 20px; padding-top: 8px; }
-.stat-label { color: var(--paper-dim); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; margin-top: 6px; }
+.stat-label { color: var(--text-muted); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; margin-top: 6px; }
 .bar-chart { display: flex; align-items: flex-end; gap: 8px; padding: 10px 4px 0; overflow-x: auto; }
 .bar-col { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 34px; flex: 1; }
-.bar { width: 100%; max-width: 40px; background: var(--brass); border-radius: 0; min-height: 2px; }
-.bar-val { font-size: 11px; color: var(--paper-dim); height: 14px; }
-.bar-label { font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--paper-dim); }
-.rating-dist { display: flex; flex-direction: column; gap: 6px; max-width: 480px; }
-.dist-row { display: flex; align-items: center; gap: 10px; }
-.dist-label { width: 40px; text-align: right; font-size: 12.5px; color: var(--paper-dim); }
-.dist-track { flex: 1; background: var(--velvet); border-radius: 0; height: 14px; }
-.dist-bar { height: 100%; background: var(--brass-dim); border-radius: 0; }
-.dist-count { width: 24px; font-size: 12px; color: var(--paper-dim); }
+.bar { width: 100%; max-width: 40px; background: var(--accent); border-radius: 0; min-height: 2px; }
+.bar-val { font-size: 11px; color: var(--text-muted); height: 14px; }
+.bar-label { font-size: 10px; font-weight: 600; letter-spacing: .06em; text-transform: uppercase; color: var(--text-muted); }
+.rating-histogram {
+  display: flex; align-items: flex-end; gap: 6px;
+  width: 100%; max-width: 680px; padding-top: 8px;
+}
+.rating-column { display: flex; flex: 1; min-width: 24px; flex-direction: column; align-items: center; gap: 5px; }
+.rating-count { color: var(--text-muted); font-size: 10px; height: 15px; }
+.rating-track {
+  width: 100%; height: 120px; display: flex; align-items: flex-end;
+  background: var(--surface); border-bottom: 1px solid var(--line);
+}
+.rating-bar { width: 100%; background: var(--accent-muted); }
+.rating-column:hover .rating-bar { background: var(--accent); }
+.rating-label { color: var(--text-muted); font-size: 10px; font-weight: 600; }
 
 /* ---- settings ---- */
 .settings { max-width: 560px; }
@@ -2123,20 +2364,28 @@
 /* ---- toast ---- */
 .toast {
   position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
-  background: var(--velvet-2); color: var(--paper);
-  border: 1px solid var(--brass); border-radius: 0;
+  background: var(--surface-raised); color: var(--text);
+  border: 1px solid var(--accent); border-radius: 0;
   padding: 10px 18px; font-size: 14px; z-index: 60;
   box-shadow: 0 8px 30px rgba(0,0,0,.45);
 }
 
 /* ---- responsive ---- */
 @media (max-width: 640px) {
-  .topbar { padding: calc(12px + env(safe-area-inset-top)) 14px 12px; }
+  .topbar-inner { justify-content: center; padding: calc(11px + env(safe-area-inset-top)) 14px 11px; }
+  .brand { font-size: 18px; }
+  .desktop-nav { display: none; }
+  .bottombar { display: flex; }
   .stage { padding: 16px 14px calc(84px + env(safe-area-inset-bottom)); }
+  .films-head { align-items: flex-end; gap: 16px; }
+  .films-head .page-head { font-size: 26px; }
+  .top-tabs { gap: 16px; }
   .grid { grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; }
   .detail-poster { width: 100%; max-width: 300px; }
   .log-form-poster { width: 110px; }
   .marquee-board { grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); }
+  .rank-controls { grid-template-columns: 1fr 1fr; }
+  .rank-controls .btn-ghost { grid-column: 1 / -1; order: -1; }
 }
     `}</style>
   );
