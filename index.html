@@ -6,7 +6,7 @@
   <meta name="viewport"
     content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>Marquee — a movie diary</title>
-  <meta name="marquee-build" content="2026.07.17-shared-label-final" />
+  <meta name="marquee-build" content="2026.07.17-social-polish-noir" />
   <meta name="description" content="A personal, single-user movie diary powered by TMDB." />
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" href="icons/favicon-32.png" sizes="32x32" />
@@ -63,7 +63,7 @@
 <body>
   <div id="root">
     <div id="boot-message">
-      <span>Dimming the lights</span>
+      <span>dimming the lights</span>
     </div>
   </div>
 
@@ -145,13 +145,13 @@ const APP_CLIENT = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHAB
   }
 });
 const THEMES = [{
-  key: "marquee",
-  name: "Marquee",
-  colors: ["#000000", "#8ecae6"]
-}, {
   key: "noir",
   name: "Noir",
   colors: ["#000000", "#f4f4f2"]
+}, {
+  key: "marquee",
+  name: "Marquee",
+  colors: ["#000000", "#8ecae6"]
 }, {
   key: "curtain",
   name: "Red Curtain",
@@ -827,6 +827,24 @@ function MovieDiary({
     loadAccountData();
     loadSharedLists();
   }, [loadAccountData, loadSharedLists]);
+  useEffect(() => {
+    const channel = client.channel(`shared-lists-${user.id}`).on("postgres_changes", {
+      event: "*",
+      schema: "public",
+      table: "shared_lists"
+    }, loadSharedLists).on("postgres_changes", {
+      event: "*",
+      schema: "public",
+      table: "shared_list_items"
+    }, loadSharedLists).on("postgres_changes", {
+      event: "*",
+      schema: "public",
+      table: "shared_list_members"
+    }, loadSharedLists).subscribe();
+    return () => {
+      client.removeChannel(channel);
+    };
+  }, [client, user.id, loadSharedLists]);
   const persistEntries = async next => {
     const deletedIds = Object.keys(entries).filter(id => !next[id]);
     setEntries(next);
@@ -1086,6 +1104,7 @@ function MovieDiary({
     }
   };
   const importLegacyDiary = async () => {
+    if (!profile || !profile.is_owner) return "This owner-only tool isn't available for this account.";
     const local = {
       [STORE.entries]: await loadKey(STORE.entries, {}),
       [STORE.lists]: await loadKey(STORE.lists, []),
@@ -1160,7 +1179,7 @@ function MovieDiary({
     });
     notify("Entry removed.");
   };
-  const activeNav = view.name === "detail" ? "diary" : view.name === "list" ? "lists" : view.name === "member" ? "feed" : view.name;
+  const activeNav = view.name === "detail" ? "diary" : view.name === "list" ? "lists" : ["member", "circle-film"].includes(view.name) ? "feed" : view.name;
   const sharedMovieCache = useMemo(() => Object.fromEntries(sharedLists.flatMap(list => (list.items || []).map(item => [String(item.tmdb_id), {
     title: item.title,
     posterPath: item.poster_path,
@@ -1172,11 +1191,11 @@ function MovieDiary({
       className: "mvd"
     }, /*#__PURE__*/React.createElement(StyleTag, null), /*#__PURE__*/React.createElement("div", {
       className: "app-loader"
-    }, /*#__PURE__*/React.createElement("span", null, "Dimming the lights")));
+    }, /*#__PURE__*/React.createElement("span", null, "dimming the lights")));
   }
   return /*#__PURE__*/React.createElement("div", {
     className: "mvd",
-    "data-theme": profile && profile.theme_key ? profile.theme_key : "marquee"
+    "data-theme": profile && profile.theme_key ? profile.theme_key : "noir"
   }, /*#__PURE__*/React.createElement(StyleTag, null), /*#__PURE__*/React.createElement("header", {
     className: "topbar"
   }, /*#__PURE__*/React.createElement("div", {
@@ -1216,12 +1235,37 @@ function MovieDiary({
     onOpenProfile: id => setView({
       name: "member",
       id
+    }),
+    onOpenFilm: id => setView({
+      name: "circle-film",
+      id,
+      back: {
+        name: "feed"
+      }
     })
   }), view.name === "member" && /*#__PURE__*/React.createElement(MemberProfilePage, {
     client: client,
     userId: view.id,
     onBack: () => setView({
       name: "feed"
+    }),
+    onOpenFilm: id => setView({
+      name: "circle-film",
+      id,
+      back: {
+        name: "member",
+        id: view.id
+      }
+    })
+  }), view.name === "circle-film" && /*#__PURE__*/React.createElement(CircleFilmPage, {
+    client: client,
+    tmdbId: view.id,
+    onBack: () => setView(view.back || {
+      name: "feed"
+    }),
+    onOpenProfile: id => setView({
+      name: "member",
+      id
     })
   }), view.name === "diary" && /*#__PURE__*/React.createElement(FilmsPage, {
     entries: entries,
@@ -1637,7 +1681,8 @@ function FilmsPage({
 function FeedPage({
   client,
   currentUserId,
-  onOpenProfile
+  onOpenProfile,
+  onOpenFilm
 }) {
   const [mode, setMode] = useState("activity");
   const [items, setItems] = useState([]);
@@ -1678,6 +1723,17 @@ function FeedPage({
   useEffect(() => {
     mode === "activity" ? loadActivity() : loadNews();
   }, [mode, loadActivity, loadNews]);
+  useEffect(() => {
+    if (mode !== "activity") return;
+    const channel = client.channel("marquee-activity-feed").on("postgres_changes", {
+      event: "*",
+      schema: "public",
+      table: "diary_entries"
+    }, loadActivity).subscribe();
+    return () => {
+      client.removeChannel(channel);
+    };
+  }, [client, mode, loadActivity]);
   const refresh = mode === "activity" ? loadActivity : loadNews;
   return /*#__PURE__*/React.createElement("section", null, /*#__PURE__*/React.createElement("div", {
     className: "feed-head feed-head-switchable"
@@ -1735,8 +1791,10 @@ function FeedPage({
       className: "feed-action"
     }, "logged a film · ", fmtDate(item.watched_date)))), /*#__PURE__*/React.createElement("div", {
       className: "feed-content"
-    }, /*#__PURE__*/React.createElement("div", {
-      className: "feed-poster"
+    }, /*#__PURE__*/React.createElement("button", {
+      className: "feed-poster feed-film-open",
+      onClick: () => onOpenFilm(String(item.tmdb_id)),
+      "aria-label": `Open ${item.title} circle page`
     }, poster ? /*#__PURE__*/React.createElement("img", {
       src: IMG + "w185" + poster,
       alt: "",
@@ -1745,7 +1803,10 @@ function FeedPage({
       className: "poster-blank"
     })), /*#__PURE__*/React.createElement("div", {
       className: "feed-copy"
-    }, /*#__PURE__*/React.createElement("h2", null, item.title, " ", /*#__PURE__*/React.createElement("span", null, item.release_date ? item.release_date.slice(0, 4) : "")), /*#__PURE__*/React.createElement(StarDisplay, {
+    }, /*#__PURE__*/React.createElement("h2", null, /*#__PURE__*/React.createElement("button", {
+      className: "feed-film-title",
+      onClick: () => onOpenFilm(String(item.tmdb_id))
+    }, item.title, " ", /*#__PURE__*/React.createElement("span", null, item.release_date ? item.release_date.slice(0, 4) : ""))), /*#__PURE__*/React.createElement(StarDisplay, {
       value: Number(item.rating),
       size: 15
     }), item.review ? /*#__PURE__*/React.createElement("p", null, item.review) : /*#__PURE__*/React.createElement("p", {
@@ -1779,7 +1840,8 @@ function FeedPage({
 function MemberProfilePage({
   client,
   userId,
-  onBack
+  onBack,
+  onOpenFilm
 }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -1861,8 +1923,9 @@ function MemberProfilePage({
       key: index
     }, /*#__PURE__*/React.createElement("span", {
       className: "marquee-rank"
-    }, String(index + 1).padStart(2, "0")), movie ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
-      className: "marquee-poster"
+    }, String(index + 1).padStart(2, "0")), movie ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
+      className: "marquee-poster",
+      onClick: () => onOpenFilm(id)
     }, poster ? /*#__PURE__*/React.createElement("img", {
       src: IMG + "w342" + poster,
       alt: "",
@@ -1908,9 +1971,10 @@ function MemberProfilePage({
     className: "profile-recent-grid"
   }, entries.slice(0, 6).map(entry => {
     const poster = entry.chosenPoster || entry.posterPath;
-    return /*#__PURE__*/React.createElement("div", {
+    return /*#__PURE__*/React.createElement("button", {
       className: "profile-recent-film",
-      key: entry.id
+      key: entry.id,
+      onClick: () => onOpenFilm(entry.id)
     }, poster ? /*#__PURE__*/React.createElement("img", {
       src: IMG + "w342" + poster,
       alt: "",
@@ -1921,6 +1985,111 @@ function MemberProfilePage({
       value: entry.rating,
       size: 12
     }));
+  })));
+}
+function CircleFilmPage({
+  client,
+  tmdbId,
+  onBack,
+  onOpenProfile
+}) {
+  const [entries, setEntries] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const loadFilm = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    const {
+      data,
+      error
+    } = await client.from("diary_entries").select(`
+            *,
+            profiles!diary_entries_user_id_fkey (
+              username,
+              display_name,
+              avatar_url
+            )
+          `).eq("tmdb_id", Number(tmdbId)).order("watched_date", {
+      ascending: false
+    });
+    if (error) setError(error.message);else setEntries(data || []);
+    setLoading(false);
+  }, [client, tmdbId]);
+  useEffect(() => {
+    loadFilm();
+  }, [loadFilm]);
+  useEffect(() => {
+    const channel = client.channel(`circle-film-${tmdbId}`).on("postgres_changes", {
+      event: "*",
+      schema: "public",
+      table: "diary_entries",
+      filter: `tmdb_id=eq.${Number(tmdbId)}`
+    }, loadFilm).subscribe();
+    return () => {
+      client.removeChannel(channel);
+    };
+  }, [client, tmdbId, loadFilm]);
+  if (loading) return /*#__PURE__*/React.createElement("div", {
+    className: "app-loader inline-loader"
+  }, /*#__PURE__*/React.createElement("span", null, "opening film"));
+  if (error || entries.length === 0) {
+    return /*#__PURE__*/React.createElement("section", null, /*#__PURE__*/React.createElement("button", {
+      className: "btn-ghost back",
+      onClick: onBack
+    }, "← Back"), /*#__PURE__*/React.createElement("div", {
+      className: error ? "notice error" : "quiet-note"
+    }, error ? `This film couldn't be opened: ${error}` : "No one in your circle has logged this film yet."));
+  }
+  const first = entries[0];
+  const poster = first.chosen_poster || first.poster_path;
+  const average = entries.reduce((sum, entry) => sum + Number(entry.rating), 0) / entries.length;
+  const reviews = entries.filter(entry => entry.review && entry.review.trim());
+  return /*#__PURE__*/React.createElement("section", {
+    className: "circle-film-page"
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "btn-ghost back",
+    onClick: onBack
+  }, "← Back"), /*#__PURE__*/React.createElement("div", {
+    className: "circle-film-hero"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "circle-film-poster"
+  }, poster ? /*#__PURE__*/React.createElement("img", {
+    src: IMG + "w500" + poster,
+    alt: ""
+  }) : /*#__PURE__*/React.createElement("div", {
+    className: "poster-blank"
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "circle-film-heading"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "eyebrow"
+  }, "Your circle on"), /*#__PURE__*/React.createElement("h1", null, first.title, " ", /*#__PURE__*/React.createElement("span", null, first.release_date ? first.release_date.slice(0, 4) : "")), /*#__PURE__*/React.createElement("div", {
+    className: "circle-film-summary"
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("strong", null, average.toFixed(2)), /*#__PURE__*/React.createElement("span", null, "circle average")), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("strong", null, entries.length), /*#__PURE__*/React.createElement("span", null, entries.length === 1 ? "member watched" : "members watched")), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("strong", null, reviews.length), /*#__PURE__*/React.createElement("span", null, "written ", reviews.length === 1 ? "review" : "reviews"))))), /*#__PURE__*/React.createElement("h2", {
+    className: "section-head"
+  }, "Ratings and reviews"), /*#__PURE__*/React.createElement("div", {
+    className: "circle-review-list"
+  }, entries.map(entry => {
+    const person = entry.profiles || {};
+    return /*#__PURE__*/React.createElement("article", {
+      className: "circle-review",
+      key: entry.id
+    }, /*#__PURE__*/React.createElement("button", {
+      className: "circle-review-person",
+      onClick: () => onOpenProfile(entry.user_id)
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "avatar" + (person.avatar_url ? " has-image" : "")
+    }, person.avatar_url ? /*#__PURE__*/React.createElement("img", {
+      src: person.avatar_url,
+      alt: "",
+      loading: "lazy"
+    }) : (person.display_name || person.username || "?").slice(0, 1).toUpperCase()), /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("strong", null, person.display_name || person.username || "Marquee member"), /*#__PURE__*/React.createElement("small", null, "@", person.username))), /*#__PURE__*/React.createElement("div", {
+      className: "circle-review-rating"
+    }, /*#__PURE__*/React.createElement(StarDisplay, {
+      value: Number(entry.rating),
+      size: 16
+    }), /*#__PURE__*/React.createElement("span", null, fmtDate(entry.watched_date))), entry.review ? /*#__PURE__*/React.createElement("p", null, entry.review) : /*#__PURE__*/React.createElement("p", {
+      className: "quiet-note"
+    }, "No written review."));
   })));
 }
 
@@ -2936,7 +3105,9 @@ function SettingsPage({
     className: "profile-summary-copy"
   }, /*#__PURE__*/React.createElement("div", {
     className: "profile-summary-name"
-  }, profile ? profile.display_name : "Marquee user"), /*#__PURE__*/React.createElement("div", {
+  }, profile ? profile.display_name : "Marquee user", " ", profile && profile.is_owner && /*#__PURE__*/React.createElement("span", {
+    className: "owner-badge"
+  }, "Owner")), /*#__PURE__*/React.createElement("div", {
     className: "quiet-note"
   }, email), profile && profile.bio && /*#__PURE__*/React.createElement("p", {
     className: "profile-bio-copy"
@@ -2990,7 +3161,7 @@ function SettingsPage({
     role: "radiogroup",
     "aria-label": "Color scheme"
   }, THEMES.map(theme => {
-    const selected = (profile && profile.theme_key ? profile.theme_key : "marquee") === theme.key;
+    const selected = (profile && profile.theme_key ? profile.theme_key : "noir") === theme.key;
     return /*#__PURE__*/React.createElement("button", {
       className: "theme-option" + (selected ? " active" : ""),
       key: theme.key,
@@ -3016,16 +3187,16 @@ function SettingsPage({
   }, /*#__PURE__*/React.createElement("button", {
     className: "btn-ghost",
     onClick: onOpenStats
-  }, "View your stats"), /*#__PURE__*/React.createElement("button", {
+  }, "View your stats"), profile && profile.is_owner && /*#__PURE__*/React.createElement("button", {
     className: "btn-ghost",
     onClick: importLegacy,
     disabled: importing
   }, importing ? "Importing…" : "Import old diary"), /*#__PURE__*/React.createElement("button", {
     className: "btn-ghost danger",
     onClick: onSignOut
-  }, "Sign out")), /*#__PURE__*/React.createElement("p", {
+  }, "Sign out")), profile && profile.is_owner && /*#__PURE__*/React.createElement("p", {
     className: "quiet-note"
-  }, "Import old diary is only for the owner of the original shared Marquee diary. Friends should leave it alone."), importError && /*#__PURE__*/React.createElement("div", {
+  }, "Owner tools are visible only on your account."), importError && /*#__PURE__*/React.createElement("div", {
     className: "notice error"
   }, importError), /*#__PURE__*/React.createElement("h2", {
     className: "section-head"
@@ -3206,7 +3377,7 @@ function AuthShell() {
       className: "mvd"
     }, /*#__PURE__*/React.createElement(StyleTag, null), /*#__PURE__*/React.createElement("div", {
       className: "app-loader"
-    }, /*#__PURE__*/React.createElement("span", null, "Dimming the lights")));
+    }, /*#__PURE__*/React.createElement("span", null, "dimming the lights")));
   }
   if (session && needsPassword) return /*#__PURE__*/React.createElement(SetPasswordPage, {
     client: APP_CLIENT,
@@ -3229,10 +3400,10 @@ function StyleTag() {
 .mvd {
   --bg: #000;
   --app-bg: #000;
-  --surface: #181b21;
-  --surface-raised: #22262e;
-  --accent: #8ecae6;
-  --accent-muted: #6a9cbd;
+  --surface: #161616;
+  --surface-raised: #222;
+  --accent: #f4f4f2;
+  --accent-muted: #b9b9b5;
   --danger: #e5484d;
   --text: #f1f3f5;
   --text-muted: #9aa3ad;
@@ -3251,6 +3422,9 @@ function StyleTag() {
 }
 .mvd[data-theme="noir"] {
   --accent: #f4f4f2; --accent-muted: #b9b9b5; --surface: #161616; --surface-raised: #222;
+}
+.mvd[data-theme="marquee"] {
+  --accent: #8ecae6; --accent-muted: #6a9cbd; --surface: #181b21; --surface-raised: #22262e;
 }
 .mvd[data-theme="curtain"] {
   --accent: #e05252; --accent-muted: #9f3b3b; --surface: #1b1112; --surface-raised: #281719;
@@ -3517,18 +3691,43 @@ function StyleTag() {
 .member-handle { color: var(--accent); font-size: 12px; margin-top: 4px; }
 .member-bio { max-width: 560px; margin: 10px 0 0; color: var(--text-muted); white-space: pre-wrap; }
 .profile-section-head { margin-top: 32px; }
-.member-top5 .marquee-poster { cursor: default; }
+.member-top5 .marquee-poster { cursor: pointer; }
 .member-empty { cursor: default; }
 .profile-recent-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 14px; }
+.profile-recent-film { background: none; border: none; color: var(--text); padding: 0; text-align: left; }
+.profile-recent-film:hover { color: var(--accent); }
 .profile-recent-film img, .profile-recent-film .poster-blank { width: 100%; aspect-ratio: 2/3; object-fit: cover; }
 .profile-recent-film strong { display: block; font-size: 11px; line-height: 1.3; margin: 7px 0 3px; }
 .feed-poster { width: 92px; aspect-ratio: 2/3; flex-shrink: 0; background: var(--surface-raised); }
 .feed-poster img { width: 100%; height: 100%; object-fit: cover; }
+.feed-film-open { display: block; border: none; padding: 0; color: inherit; }
+.feed-film-open:hover { outline: 1px solid var(--accent); }
 .feed-copy { min-width: 0; }
 .feed-copy h2 { margin: -4px 0 5px; font-size: 20px; letter-spacing: -.025em; }
 .feed-copy h2 span { color: var(--text-muted); font-size: 13px; font-weight: 500; letter-spacing: 0; }
+.feed-film-title { border: none; background: none; color: var(--text); padding: 0; text-align: left; font: inherit; }
+.feed-film-title:hover { color: var(--accent); }
 .feed-copy p { margin: 13px 0 0; color: var(--text); line-height: 1.65; white-space: pre-wrap; }
 .feed-empty { padding-top: 60px; }
+
+/* ---- shared film pages ---- */
+.circle-film-hero { display: grid; grid-template-columns: 190px minmax(0, 1fr); gap: 32px; align-items: end; padding: 12px 0 34px; border-bottom: 1px solid var(--line); }
+.circle-film-poster img, .circle-film-poster .poster-blank { width: 100%; aspect-ratio: 2/3; object-fit: cover; }
+.circle-film-heading h1 { font-size: clamp(30px, 5vw, 58px); line-height: 1.02; letter-spacing: -.05em; margin: 7px 0 24px; max-width: 820px; }
+.circle-film-heading h1 span { color: var(--text-muted); font-size: .42em; font-weight: 500; letter-spacing: 0; }
+.circle-film-summary { display: flex; flex-wrap: wrap; gap: 28px; }
+.circle-film-summary div { display: flex; flex-direction: column; }
+.circle-film-summary strong { font-size: 24px; line-height: 1; color: var(--accent); }
+.circle-film-summary span { color: var(--text-muted); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; margin-top: 6px; }
+.circle-review-list { max-width: 820px; }
+.circle-review { padding: 20px 0 24px; border-bottom: 1px solid var(--line); }
+.circle-review-person { display: inline-flex; align-items: center; gap: 10px; background: none; border: none; color: var(--text); padding: 0; text-align: left; }
+.circle-review-person:hover strong { color: var(--accent); }
+.circle-review-person strong, .circle-review-person small { display: block; }
+.circle-review-person small { color: var(--text-muted); font-size: 10px; margin-top: 1px; }
+.circle-review-rating { display: flex; align-items: center; gap: 12px; margin: 12px 0 0; }
+.circle-review-rating > span { color: var(--text-muted); font-size: 10px; }
+.circle-review > p { max-width: 680px; margin: 12px 0 0; line-height: 1.65; white-space: pre-wrap; }
 
 .poster-blank {
   width: 100%; height: 100%; min-height: 120px;
@@ -3751,6 +3950,7 @@ function StyleTag() {
 .profile-summary { display: flex; align-items: center; gap: 14px; padding-bottom: 22px; border-bottom: 1px solid var(--line); margin-bottom: 22px; }
 .profile-summary-copy { min-width: 0; }
 .profile-summary-name { font-size: 17px; font-weight: 750; }
+.owner-badge { display: inline-block; vertical-align: middle; border: 1px solid var(--accent); color: var(--accent); padding: 2px 5px; margin-left: 6px; font-size: 8px; line-height: 1; letter-spacing: .1em; text-transform: uppercase; }
 .profile-bio-copy { max-width: 390px; margin: 8px 0 0; color: var(--text); font-size: 13px; line-height: 1.55; white-space: pre-wrap; }
 .avatar-upload { display: inline-flex; margin-top: 10px; cursor: pointer; }
 .avatar-upload input { display: none; }
@@ -3830,6 +4030,10 @@ function StyleTag() {
   .member-avatar { width: 78px; height: 78px; font-size: 25px; }
   .member-hero .page-head { font-size: 27px; }
   .profile-recent-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .circle-film-hero { grid-template-columns: 105px minmax(0, 1fr); gap: 18px; align-items: center; padding-bottom: 24px; }
+  .circle-film-heading h1 { font-size: 27px; margin-bottom: 17px; }
+  .circle-film-summary { gap: 14px; }
+  .circle-film-summary strong { font-size: 18px; }
   .profile-fields { grid-template-columns: 1fr; }
   .theme-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .list-create { align-items: stretch; }
