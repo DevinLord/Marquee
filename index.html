@@ -6,7 +6,7 @@
   <meta name="viewport"
     content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>Marquee — a movie diary</title>
-  <meta name="marquee-build" content="2026.07.17-final-logo" />
+  <meta name="marquee-build" content="2026.07.17-phase2" />
   <meta name="description" content="A personal, single-user movie diary powered by TMDB." />
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" href="icons/favicon-32.png" sizes="32x32" />
@@ -67,7 +67,9 @@
     </div>
   </div>
 
-  <!-- Precompiled application runtime. React and Supabase load from their CDNs. -->
+  <!-- React, ReactDOM, and Babel standalone (in-browser JSX compiler) —
+     this lets the app run as a single plain HTML file with no build step.
+     Requires an internet connection to load these scripts. -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
 
@@ -76,8 +78,13 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 
   <script>
-
-const { useState, useEffect, useRef, useMemo, useCallback } = React;
+const {
+  useState,
+  useEffect,
+  useRef,
+  useMemo,
+  useCallback
+} = React;
 
 /* ------------------------------------------------------------------
    MARQUEE — a personal movie diary
@@ -106,11 +113,10 @@ async function loadKey(key, fallback) {
     const raw = localStorage.getItem(key);
     if (raw !== null) return JSON.parse(raw);
   } catch (e) {
-
-    /* key doesn't exist yet, or storage is unavailable — that's fine */}
+    /* key doesn't exist yet, or storage is unavailable — that's fine */
+  }
   return fallback;
 }
-
 async function saveKey(key, value) {
   try {
     localStorage.setItem(key, JSON.stringify(value));
@@ -132,13 +138,36 @@ const SUPABASE_URL = "https://wfubbacbkqdxncksjbnm.supabase.co";
 const SUPABASE_PUBLISHABLE_KEY = "sb_publishable_nVTWZoxsaer7Uw3ow1NuKQ_ZKc_smL-";
 const AUTH_URL_TYPE = new URLSearchParams(window.location.hash.replace(/^#/, "")).get("type");
 const APP_CLIENT = window.supabase.createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY, {
-  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true
+  }
 });
-
+const THEMES = [{
+  key: "marquee",
+  name: "Marquee",
+  colors: ["#000000", "#8ecae6"]
+}, {
+  key: "noir",
+  name: "Noir",
+  colors: ["#000000", "#f4f4f2"]
+}, {
+  key: "curtain",
+  name: "Red Curtain",
+  colors: ["#050000", "#e05252"]
+}, {
+  key: "dusk",
+  name: "Neon Dusk",
+  colors: ["#090713", "#b8a1ff", "#5596ff"]
+}, {
+  key: "afterglow",
+  name: "Afterglow",
+  colors: ["#090403", "#ef9862", "#8f304d"]
+}];
 function userStoreKey(key, userId) {
   return `${key}:${userId}`;
 }
-
 function rowToEntry(row) {
   return {
     id: String(row.tmdb_id),
@@ -154,7 +183,6 @@ function rowToEntry(row) {
     loggedAt: new Date(row.logged_at).getTime()
   };
 }
-
 function entryToRow(entry, userId) {
   return {
     user_id: userId,
@@ -178,8 +206,14 @@ function entryToRow(entry, userId) {
 function buildTmdb(client) {
   return async function tmdb(path, params = {}) {
     try {
-      const { data, error } = await client.functions.invoke("tmdb-proxy", {
-        body: { path, params }
+      const {
+        data,
+        error
+      } = await client.functions.invoke("tmdb-proxy", {
+        body: {
+          path,
+          params
+        }
       });
       if (error) {
         const status = error.context && error.context.status;
@@ -194,7 +228,6 @@ function buildTmdb(client) {
     }
   };
 }
-
 function friendlyError(err) {
   switch (err.message) {
     case "SERVICE_AUTH":
@@ -209,7 +242,6 @@ function friendlyError(err) {
       return "Something went wrong talking to TMDB. Try again in a moment.";
   }
 }
-
 function makeAvatarBlob(file) {
   return new Promise((resolve, reject) => {
     if (!file || !file.type.startsWith("image/")) {
@@ -220,7 +252,6 @@ function makeAvatarBlob(file) {
       reject(new Error("Choose an image smaller than 15 MB."));
       return;
     }
-
     const objectUrl = URL.createObjectURL(file);
     const image = new Image();
     image.onload = () => {
@@ -233,11 +264,7 @@ function makeAvatarBlob(file) {
       const context = canvas.getContext("2d");
       context.drawImage(image, sourceX, sourceY, side, side, 0, 0, 512, 512);
       URL.revokeObjectURL(objectUrl);
-      canvas.toBlob(
-        (blob) => blob ? resolve(blob) : reject(new Error("That image couldn't be prepared.")),
-        "image/jpeg",
-        0.88
-      );
+      canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error("That image couldn't be prepared.")), "image/jpeg", 0.88);
     };
     image.onerror = () => {
       URL.revokeObjectURL(objectUrl);
@@ -253,15 +280,17 @@ function fmtDate(iso) {
   if (!iso) return "—";
   const [y, m, d] = iso.split("-").map(Number);
   const dt = new Date(y, m - 1, d);
-  return dt.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+  return dt.toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric",
+    year: "numeric"
+  });
 }
-
 function todayISO() {
   const d = new Date();
-  const p = (n) => String(n).padStart(2, "0");
+  const p = n => String(n).padStart(2, "0");
   return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
-
 function yearOf(entry) {
   return entry.releaseDate ? entry.releaseDate.slice(0, 4) : "";
 }
@@ -272,12 +301,23 @@ function yearOf(entry) {
    lightweight movie cache for anything only ever added to a list. */
 function resolveMovie(id, entries, movieCache) {
   const e = entries[id];
-  if (e) return { id, title: e.title, posterPath: e.chosenPoster || e.posterPath, releaseDate: e.releaseDate, logged: true };
+  if (e) return {
+    id,
+    title: e.title,
+    posterPath: e.chosenPoster || e.posterPath,
+    releaseDate: e.releaseDate,
+    logged: true
+  };
   const c = movieCache[id];
-  if (c) return { id, title: c.title, posterPath: c.posterPath, releaseDate: c.releaseDate, logged: false };
+  if (c) return {
+    id,
+    title: c.title,
+    posterPath: c.posterPath,
+    releaseDate: c.releaseDate,
+    logged: false
+  };
   return null;
 }
-
 function uid() {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
 }
@@ -285,113 +325,253 @@ function uid() {
 /* ---------------- tab bar icons ---------------- */
 
 function IconFilms() {
-  return (/*#__PURE__*/
-    React.createElement("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.6", strokeLinejoin: "round", "aria-hidden": "true" }, /*#__PURE__*/
-    React.createElement("path", { d: "M3 9a2 2 0 000 4v3.5a1 1 0 001 1h16a1 1 0 001-1V13a2 2 0 000-4V5.5a1 1 0 00-1-1H4a1 1 0 00-1 1V9z" }), /*#__PURE__*/
-    React.createElement("line", { x1: "14", y1: "4.5", x2: "14", y2: "19.5", strokeDasharray: "2 2.4" })
-    ));
-
+  return /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.6",
+    strokeLinejoin: "round",
+    "aria-hidden": "true"
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M3 9a2 2 0 000 4v3.5a1 1 0 001 1h16a1 1 0 001-1V13a2 2 0 000-4V5.5a1 1 0 00-1-1H4a1 1 0 00-1 1V9z"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "14",
+    y1: "4.5",
+    x2: "14",
+    y2: "19.5",
+    strokeDasharray: "2 2.4"
+  }));
 }
 function IconLists() {
-  return (/*#__PURE__*/
-    React.createElement("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.6", strokeLinecap: "round", "aria-hidden": "true" }, /*#__PURE__*/
-    React.createElement("line", { x1: "8.5", y1: "6", x2: "20", y2: "6" }), /*#__PURE__*/
-    React.createElement("line", { x1: "8.5", y1: "12", x2: "20", y2: "12" }), /*#__PURE__*/
-    React.createElement("line", { x1: "8.5", y1: "18", x2: "20", y2: "18" }), /*#__PURE__*/
-    React.createElement("circle", { cx: "4.5", cy: "6", r: "1" }), /*#__PURE__*/
-    React.createElement("circle", { cx: "4.5", cy: "12", r: "1" }), /*#__PURE__*/
-    React.createElement("circle", { cx: "4.5", cy: "18", r: "1" })
-    ));
-
+  return /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.6",
+    strokeLinecap: "round",
+    "aria-hidden": "true"
+  }, /*#__PURE__*/React.createElement("line", {
+    x1: "8.5",
+    y1: "6",
+    x2: "20",
+    y2: "6"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "8.5",
+    y1: "12",
+    x2: "20",
+    y2: "12"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "8.5",
+    y1: "18",
+    x2: "20",
+    y2: "18"
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: "4.5",
+    cy: "6",
+    r: "1"
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: "4.5",
+    cy: "12",
+    r: "1"
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: "4.5",
+    cy: "18",
+    r: "1"
+  }));
 }
 function IconStats() {
-  return (/*#__PURE__*/
-    React.createElement("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.6", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true" }, /*#__PURE__*/
-    React.createElement("line", { x1: "5", y1: "20", x2: "5", y2: "12" }), /*#__PURE__*/
-    React.createElement("line", { x1: "12", y1: "20", x2: "12", y2: "6.5" }), /*#__PURE__*/
-    React.createElement("line", { x1: "19", y1: "20", x2: "19", y2: "15" }), /*#__PURE__*/
-    React.createElement("line", { x1: "3", y1: "20.5", x2: "21", y2: "20.5" })
-    ));
-
+  return /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.6",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    "aria-hidden": "true"
+  }, /*#__PURE__*/React.createElement("line", {
+    x1: "5",
+    y1: "20",
+    x2: "5",
+    y2: "12"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "12",
+    y1: "20",
+    x2: "12",
+    y2: "6.5"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "19",
+    y1: "20",
+    x2: "19",
+    y2: "15"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "3",
+    y1: "20.5",
+    x2: "21",
+    y2: "20.5"
+  }));
 }
 function IconSettings() {
-  return (/*#__PURE__*/
-    React.createElement("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.6", strokeLinecap: "round", "aria-hidden": "true" }, /*#__PURE__*/
-    React.createElement("circle", { cx: "12", cy: "12", r: "8.5" }), /*#__PURE__*/
-    React.createElement("circle", { cx: "12", cy: "12", r: "2.6" }), /*#__PURE__*/
-    React.createElement("line", { x1: "12", y1: "2.7", x2: "12", y2: "6.3" }), /*#__PURE__*/
-    React.createElement("line", { x1: "12", y1: "17.7", x2: "12", y2: "21.3" }), /*#__PURE__*/
-    React.createElement("line", { x1: "2.7", y1: "12", x2: "6.3", y2: "12" }), /*#__PURE__*/
-    React.createElement("line", { x1: "17.7", y1: "12", x2: "21.3", y2: "12" })
-    ));
-
+  return /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.6",
+    strokeLinecap: "round",
+    "aria-hidden": "true"
+  }, /*#__PURE__*/React.createElement("circle", {
+    cx: "12",
+    cy: "12",
+    r: "8.5"
+  }), /*#__PURE__*/React.createElement("circle", {
+    cx: "12",
+    cy: "12",
+    r: "2.6"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "12",
+    y1: "2.7",
+    x2: "12",
+    y2: "6.3"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "12",
+    y1: "17.7",
+    x2: "12",
+    y2: "21.3"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "2.7",
+    y1: "12",
+    x2: "6.3",
+    y2: "12"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "17.7",
+    y1: "12",
+    x2: "21.3",
+    y2: "12"
+  }));
 }
 function IconSearch() {
-  return (/*#__PURE__*/
-    React.createElement("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.8", strokeLinecap: "round", "aria-hidden": "true" }, /*#__PURE__*/
-    React.createElement("circle", { cx: "10.5", cy: "10.5", r: "6.5" }), /*#__PURE__*/
-    React.createElement("line", { x1: "15.5", y1: "15.5", x2: "21", y2: "21" })
-    ));
-
+  return /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.8",
+    strokeLinecap: "round",
+    "aria-hidden": "true"
+  }, /*#__PURE__*/React.createElement("circle", {
+    cx: "10.5",
+    cy: "10.5",
+    r: "6.5"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "15.5",
+    y1: "15.5",
+    x2: "21",
+    y2: "21"
+  }));
 }
-
-function LogoMark({ size = 30 }) {
-  return (/*#__PURE__*/
-    React.createElement("svg", { className: "logo-mark", width: size * 1.06, height: size, viewBox: "0 0 527 498", "aria-hidden": "true" }, /*#__PURE__*/
-    React.createElement("path", { fillRule: "evenodd", d: "M0 249v249h52V120.6l.877.95.878.95 23.74 45 23.74 45 10.516 20 10.517 20L131 269l8.733 16.5 6.274 12 6.273 12 3.736 7 3.735 7 10.499 20 10.499 20 3.778 7.25 3.778 7.25H247v-.846l-3.891-7.327-3.892-7.327-23.723-45-23.724-45-6.022-11.5-6.022-11.5-4.244-8-4.243-8-24.75-47-24.75-47-8.72-16.5-8.72-16.5-6.789-13-6.789-13-8.982-17-8.982-17-4.741-9-4.741-9-6.787-13-6.787-13-.973-1.25L47.755 0H0zM98 .459v.459l14.108 26.791L126.216 54.5l5.269 10 5.269 10 15.473 29.5 15.473 29.5 7.287 14 7.287 14 3.238 6 3.238 6 6.001 11.5 6.001 11.5 9.743 18.5 9.743 18.5 6.02 11.5 6.019 11.5 10.503 20 10.503 20 9.734 18.5 9.734 18.5 5.752 11 5.752 11 5.955 11.25 5.956 11.25h42.577l5.761-11.25 5.761-11.25.716-1 .715-1 9.288-18 9.288-18 .723-1 .723-1 8.776-17 8.776-17 2.766-5 2.765-5 19.456-37 19.457-37 5.013-9.5 5.012-9.5 14.756-28 14.756-28 .875-.95.874-.95V498h52V0h-48.509l-4.103 7.75-4.104 7.75L438.036 77l-32.249 61.5-3.782 7-3.782 7-27.508 52.5-27.507 52.5-7.148 13.5-7.148 13.5-5.187 10.256-5.187 10.257-1.019-.335-1.019-.334-17.527-33.422-17.528-33.422L268.07 212l-13.376-25.5-3.211-6-3.211-6-30.74-58.5-30.74-58.5-5.595-10.5-5.595-10.5-6.838-13-6.839-13-2.671-5.25L156.583 0H98zM355.168 7.25l-3.971 7.25L326 62.5l-25.196 48-6.485 12.3-6.484 12.301 14.204 27.199 14.203 27.2.694.765.694.765 12.935-24.702 12.935-24.703 6.041-11.562 6.041-11.563 6.842-13 6.842-13 5.49-10.5 5.491-10.5 10.519-20 10.52-20 7.263-13.666 7.263-13.667.661-2.083.662-2.084H359.14zM421 323.815v.814l-6.34 11.936-6.339 11.935-6.575 12.5-6.575 12.5-12.586 23.877L370 421.254V498h52V323h-1zM105 411v87h52v-76.309l-8.872-17.095-8.872-17.096-9.257-17.5-9.257-17.5-7.455-14.25-7.456-14.25H105z" })
-    ));
-
+function LogoMark({
+  size = 30
+}) {
+  return /*#__PURE__*/React.createElement("svg", {
+    className: "logo-mark",
+    width: size * 1.06,
+    height: size,
+    viewBox: "0 0 527 498",
+    "aria-hidden": "true"
+  }, /*#__PURE__*/React.createElement("path", {
+    fillRule: "evenodd",
+    d: "M0 249v249h52V120.6l.877.95.878.95 23.74 45 23.74 45 10.516 20 10.517 20L131 269l8.733 16.5 6.274 12 6.273 12 3.736 7 3.735 7 10.499 20 10.499 20 3.778 7.25 3.778 7.25H247v-.846l-3.891-7.327-3.892-7.327-23.723-45-23.724-45-6.022-11.5-6.022-11.5-4.244-8-4.243-8-24.75-47-24.75-47-8.72-16.5-8.72-16.5-6.789-13-6.789-13-8.982-17-8.982-17-4.741-9-4.741-9-6.787-13-6.787-13-.973-1.25L47.755 0H0zM98 .459v.459l14.108 26.791L126.216 54.5l5.269 10 5.269 10 15.473 29.5 15.473 29.5 7.287 14 7.287 14 3.238 6 3.238 6 6.001 11.5 6.001 11.5 9.743 18.5 9.743 18.5 6.02 11.5 6.019 11.5 10.503 20 10.503 20 9.734 18.5 9.734 18.5 5.752 11 5.752 11 5.955 11.25 5.956 11.25h42.577l5.761-11.25 5.761-11.25.716-1 .715-1 9.288-18 9.288-18 .723-1 .723-1 8.776-17 8.776-17 2.766-5 2.765-5 19.456-37 19.457-37 5.013-9.5 5.012-9.5 14.756-28 14.756-28 .875-.95.874-.95V498h52V0h-48.509l-4.103 7.75-4.104 7.75L438.036 77l-32.249 61.5-3.782 7-3.782 7-27.508 52.5-27.507 52.5-7.148 13.5-7.148 13.5-5.187 10.256-5.187 10.257-1.019-.335-1.019-.334-17.527-33.422-17.528-33.422L268.07 212l-13.376-25.5-3.211-6-3.211-6-30.74-58.5-30.74-58.5-5.595-10.5-5.595-10.5-6.838-13-6.839-13-2.671-5.25L156.583 0H98zM355.168 7.25l-3.971 7.25L326 62.5l-25.196 48-6.485 12.3-6.484 12.301 14.204 27.199 14.203 27.2.694.765.694.765 12.935-24.702 12.935-24.703 6.041-11.562 6.041-11.563 6.842-13 6.842-13 5.49-10.5 5.491-10.5 10.519-20 10.52-20 7.263-13.666 7.263-13.667.661-2.083.662-2.084H359.14zM421 323.815v.814l-6.34 11.936-6.339 11.935-6.575 12.5-6.575 12.5-12.586 23.877L370 421.254V498h52V323h-1zM105 411v87h52v-76.309l-8.872-17.095-8.872-17.096-9.257-17.5-9.257-17.5-7.455-14.25-7.456-14.25H105z"
+  }));
 }
-
 function IconEdit() {
-  return (/*#__PURE__*/
-    React.createElement("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.8", strokeLinecap: "round", strokeLinejoin: "round", "aria-hidden": "true" }, /*#__PURE__*/
-    React.createElement("path", { d: "M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" })
-    ));
-
+  return /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.8",
+    strokeLinecap: "round",
+    strokeLinejoin: "round",
+    "aria-hidden": "true"
+  }, /*#__PURE__*/React.createElement("path", {
+    d: "M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"
+  }));
 }
-
 function IconPlus() {
-  return (/*#__PURE__*/
-    React.createElement("svg", { viewBox: "0 0 24 24", fill: "none", stroke: "currentColor", strokeWidth: "1.8", strokeLinecap: "round", "aria-hidden": "true" }, /*#__PURE__*/
-    React.createElement("line", { x1: "12", y1: "5", x2: "12", y2: "19" }), /*#__PURE__*/
-    React.createElement("line", { x1: "5", y1: "12", x2: "19", y2: "12" })
-    ));
-
+  return /*#__PURE__*/React.createElement("svg", {
+    viewBox: "0 0 24 24",
+    fill: "none",
+    stroke: "currentColor",
+    strokeWidth: "1.8",
+    strokeLinecap: "round",
+    "aria-hidden": "true"
+  }, /*#__PURE__*/React.createElement("line", {
+    x1: "12",
+    y1: "5",
+    x2: "12",
+    y2: "19"
+  }), /*#__PURE__*/React.createElement("line", {
+    x1: "5",
+    y1: "12",
+    x2: "19",
+    y2: "12"
+  }));
 }
-
-const NAV_ITEMS = [
-{ name: "feed", label: "Feed" },
-{ name: "diary", label: "Films", Icon: IconFilms },
-{ name: "lists", label: "Lists", Icon: IconLists },
-{ name: "stats", label: "Stats", Icon: IconStats },
-{ name: "settings", label: "Profile", Icon: IconSettings }];
-
-const MOBILE_NAV_ITEMS = NAV_ITEMS.filter((item) => ["feed", "diary", "lists", "settings"].includes(item.name));
+const NAV_ITEMS = [{
+  name: "feed",
+  label: "Feed"
+}, {
+  name: "diary",
+  label: "Films",
+  Icon: IconFilms
+}, {
+  name: "lists",
+  label: "Lists",
+  Icon: IconLists
+}, {
+  name: "stats",
+  label: "Stats",
+  Icon: IconStats
+}, {
+  name: "settings",
+  label: "Profile",
+  Icon: IconSettings
+}];
+const MOBILE_NAV_ITEMS = NAV_ITEMS.filter(item => ["feed", "diary", "lists", "settings"].includes(item.name));
 
 /* ---------------- stars ---------------- */
 
-function StarDisplay({ value, size = 15 }) {
-  return (/*#__PURE__*/
-    React.createElement("span", { className: "stars", "aria-label": `${value} out of 5 stars`, style: { fontSize: size } },
-    [0, 1, 2, 3, 4].map((i) => {
-      const fill = Math.max(0, Math.min(1, value - i));
-      return (/*#__PURE__*/
-        React.createElement("span", { className: "star-wrap", key: i, "aria-hidden": "true" }, /*#__PURE__*/
-        React.createElement("span", { className: "star-empty" }, "\u2605"), /*#__PURE__*/
-        React.createElement("span", { className: "star-fill", style: { width: fill * 100 + "%" } }, "\u2605")
-        ));
-
-    })
-    ));
-
+function StarDisplay({
+  value,
+  size = 15
+}) {
+  return /*#__PURE__*/React.createElement("span", {
+    className: "stars",
+    "aria-label": `${value} out of 5 stars`,
+    style: {
+      fontSize: size
+    }
+  }, [0, 1, 2, 3, 4].map(i => {
+    const fill = Math.max(0, Math.min(1, value - i));
+    return /*#__PURE__*/React.createElement("span", {
+      className: "star-wrap",
+      key: i,
+      "aria-hidden": "true"
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "star-empty"
+    }, "★"), /*#__PURE__*/React.createElement("span", {
+      className: "star-fill",
+      style: {
+        width: fill * 100 + "%"
+      }
+    }, "★"));
+  }));
 }
-
-function StarInput({ value, onChange, size = 26 }) {
+function StarInput({
+  value,
+  onChange,
+  size = 26
+}) {
   const [hover, setHover] = useState(null);
   const shown = hover != null ? hover : value;
-
-  const handleKey = (e) => {
+  const handleKey = e => {
     if (e.key === "ArrowRight" || e.key === "ArrowUp") {
       e.preventDefault();
       onChange(Math.min(5, (value || 0) + 0.5));
@@ -400,133 +580,149 @@ function StarInput({ value, onChange, size = 26 }) {
       onChange(Math.max(0.5, (value || 0.5) - 0.5));
     }
   };
-
-  return (/*#__PURE__*/
-    React.createElement("div", {
-      className: "star-input",
-      role: "slider",
-      tabIndex: 0,
-      "aria-label": "Rating",
-      "aria-valuemin": 0.5,
-      "aria-valuemax": 5,
-      "aria-valuenow": value || 0,
-      "aria-valuetext": `${value || 0} stars`,
-      onKeyDown: handleKey,
-      onMouseLeave: () => setHover(null),
-      style: { fontSize: size } },
-
-    [0, 1, 2, 3, 4].map((i) => {
-      const fill = Math.max(0, Math.min(1, shown - i));
-      return (/*#__PURE__*/
-        React.createElement("span", { className: "star-wrap star-hit", key: i }, /*#__PURE__*/
-        React.createElement("span", { className: "star-empty", "aria-hidden": "true" }, "\u2605"), /*#__PURE__*/
-        React.createElement("span", { className: "star-fill", "aria-hidden": "true", style: { width: fill * 100 + "%" } }, "\u2605"), /*#__PURE__*/
-        React.createElement("button", {
-          type: "button",
-          className: "half-hit left",
-          tabIndex: -1,
-          "aria-label": `${i + 0.5} stars`,
-          onMouseEnter: () => setHover(i + 0.5),
-          onClick: () => onChange(i + 0.5) }
-        ), /*#__PURE__*/
-        React.createElement("button", {
-          type: "button",
-          className: "half-hit right",
-          tabIndex: -1,
-          "aria-label": `${i + 1} stars`,
-          onMouseEnter: () => setHover(i + 1),
-          onClick: () => onChange(i + 1) }
-        )
-        ));
-
-    }), /*#__PURE__*/
-    React.createElement("span", { className: "star-num" }, shown ? shown.toFixed(1) : "—")
-    ));
-
+  return /*#__PURE__*/React.createElement("div", {
+    className: "star-input",
+    role: "slider",
+    tabIndex: 0,
+    "aria-label": "Rating",
+    "aria-valuemin": 0.5,
+    "aria-valuemax": 5,
+    "aria-valuenow": value || 0,
+    "aria-valuetext": `${value || 0} stars`,
+    onKeyDown: handleKey,
+    onMouseLeave: () => setHover(null),
+    style: {
+      fontSize: size
+    }
+  }, [0, 1, 2, 3, 4].map(i => {
+    const fill = Math.max(0, Math.min(1, shown - i));
+    return /*#__PURE__*/React.createElement("span", {
+      className: "star-wrap star-hit",
+      key: i
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "star-empty",
+      "aria-hidden": "true"
+    }, "★"), /*#__PURE__*/React.createElement("span", {
+      className: "star-fill",
+      "aria-hidden": "true",
+      style: {
+        width: fill * 100 + "%"
+      }
+    }, "★"), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "half-hit left",
+      tabIndex: -1,
+      "aria-label": `${i + 0.5} stars`,
+      onMouseEnter: () => setHover(i + 0.5),
+      onClick: () => onChange(i + 0.5)
+    }), /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "half-hit right",
+      tabIndex: -1,
+      "aria-label": `${i + 1} stars`,
+      onMouseEnter: () => setHover(i + 1),
+      onClick: () => onChange(i + 1)
+    }));
+  }), /*#__PURE__*/React.createElement("span", {
+    className: "star-num"
+  }, shown ? shown.toFixed(1) : "—"));
 }
 
 /* ---------------- film card ---------------- */
 
-function FilmCard({ entry, onOpen }) {
+function FilmCard({
+  entry,
+  onOpen
+}) {
   const poster = entry.chosenPoster || entry.posterPath;
-  return (/*#__PURE__*/
-    React.createElement("button", { className: "film-card", onClick: onOpen, "aria-label": `Open ${entry.title}` }, /*#__PURE__*/
-    React.createElement("div", { className: "film-card-poster" },
-    poster ? /*#__PURE__*/
-    React.createElement("img", { src: IMG + "w342" + poster, alt: "", loading: "lazy" }) : /*#__PURE__*/
-
-    React.createElement("div", { className: "poster-blank" }, /*#__PURE__*/React.createElement("span", null, entry.title))
-
-    ), /*#__PURE__*/
-    React.createElement("div", { className: "film-card-title" }, entry.title), /*#__PURE__*/
-    React.createElement("div", { className: "film-card-meta" }, /*#__PURE__*/
-    React.createElement(StarDisplay, { value: entry.rating, size: 11 }), /*#__PURE__*/
-    React.createElement("span", { className: "film-card-date" }, fmtDate(entry.watchedDate))
-    )
-    ));
-
+  return /*#__PURE__*/React.createElement("button", {
+    className: "film-card",
+    onClick: onOpen,
+    "aria-label": `Open ${entry.title}`
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "film-card-poster"
+  }, poster ? /*#__PURE__*/React.createElement("img", {
+    src: IMG + "w342" + poster,
+    alt: "",
+    loading: "lazy"
+  }) : /*#__PURE__*/React.createElement("div", {
+    className: "poster-blank"
+  }, /*#__PURE__*/React.createElement("span", null, entry.title))), /*#__PURE__*/React.createElement("div", {
+    className: "film-card-title"
+  }, entry.title), /*#__PURE__*/React.createElement("div", {
+    className: "film-card-meta"
+  }, /*#__PURE__*/React.createElement(StarDisplay, {
+    value: entry.rating,
+    size: 11
+  }), /*#__PURE__*/React.createElement("span", {
+    className: "film-card-date"
+  }, fmtDate(entry.watchedDate))));
 }
 
 /* ---------------- film facts (plot, director, cast) ---------------- */
 
-function FilmFacts({ tmdb, movieId, overview }) {
+function FilmFacts({
+  tmdb,
+  movieId,
+  overview
+}) {
   const [details, setDetails] = useState(null);
   const [castCrew, setCastCrew] = useState(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(true);
-
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
     setDetails(null);
     setCastCrew(null);
-    Promise.all([tmdb("/movie/" + movieId, {}), tmdb("/movie/" + movieId + "/credits", {})]).
-    then(([d, c]) => {
+    Promise.all([tmdb("/movie/" + movieId, {}), tmdb("/movie/" + movieId + "/credits", {})]).then(([d, c]) => {
       if (cancelled) return;
       setDetails(d);
       setCastCrew(c);
-    }).
-    catch((err) => {
+    }).catch(err => {
       if (!cancelled) setError(friendlyError(err));
-    }).
-    finally(() => {
+    }).finally(() => {
       if (!cancelled) setLoading(false);
     });
     return () => {
       cancelled = true;
     };
   }, [movieId]);
-
   const plot = details && details.overview || overview || "";
-  const director = castCrew && castCrew.crew ? castCrew.crew.find((p) => p.job === "Director") : null;
+  const director = castCrew && castCrew.crew ? castCrew.crew.find(p => p.job === "Director") : null;
   const cast = castCrew && castCrew.cast ? castCrew.cast.slice(0, 10) : [];
-
-  return (/*#__PURE__*/
-    React.createElement("div", { className: "film-facts" },
-    plot && /*#__PURE__*/React.createElement("p", { className: "film-plot" }, plot),
-    loading && /*#__PURE__*/React.createElement("p", { className: "quiet-note" }, "Loading cast & crew\u2026"),
-    error && /*#__PURE__*/React.createElement("div", { className: "notice error" }, error),
-    !loading && !error && director && /*#__PURE__*/
-    React.createElement("p", { className: "film-credit" }, /*#__PURE__*/React.createElement("span", { className: "film-credit-label" }, "Director"), " ", director.name),
-
-    !loading && !error && cast.length > 0 && /*#__PURE__*/
-    React.createElement("div", { className: "film-cast" }, /*#__PURE__*/
-    React.createElement("span", { className: "film-credit-label" }, "Cast"), /*#__PURE__*/
-    React.createElement("div", { className: "film-cast-list" },
-    cast.map((actor) => /*#__PURE__*/
-    React.createElement("span", { className: "cast-chip", key: actor.id }, actor.name)
-    )
-    )
-    )
-
-    ));
-
+  return /*#__PURE__*/React.createElement("div", {
+    className: "film-facts"
+  }, plot && /*#__PURE__*/React.createElement("p", {
+    className: "film-plot"
+  }, plot), loading && /*#__PURE__*/React.createElement("p", {
+    className: "quiet-note"
+  }, "Loading cast & crew…"), error && /*#__PURE__*/React.createElement("div", {
+    className: "notice error"
+  }, error), !loading && !error && director && /*#__PURE__*/React.createElement("p", {
+    className: "film-credit"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "film-credit-label"
+  }, "Director"), " ", director.name), !loading && !error && cast.length > 0 && /*#__PURE__*/React.createElement("div", {
+    className: "film-cast"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "film-credit-label"
+  }, "Cast"), /*#__PURE__*/React.createElement("div", {
+    className: "film-cast-list"
+  }, cast.map(actor => /*#__PURE__*/React.createElement("span", {
+    className: "cast-chip",
+    key: actor.id
+  }, actor.name)))));
 }
 
 /* ---------------- main app ---------------- */
 
-function MovieDiary({ client, user, onSignOut }) {
+function MovieDiary({
+  client,
+  user,
+  onSignOut
+}) {
   const [loaded, setLoaded] = useState(false);
   const [loadError, setLoadError] = useState(null);
   const [entries, setEntries] = useState({});
@@ -534,36 +730,32 @@ function MovieDiary({ client, user, onSignOut }) {
   const [movieCache, setMovieCache] = useState({});
   const [top5, setTop5] = useState([null, null, null, null, null]);
   const [profile, setProfile] = useState(null);
-  const [view, setView] = useState({ name: "feed" });
+  const [sharedLists, setSharedLists] = useState([]);
+  const [view, setView] = useState({
+    name: "feed"
+  });
   const [feedVersion, setFeedVersion] = useState(0);
   const [logOpen, setLogOpen] = useState(false);
   const [toast, setToast] = useState(null);
   const toastTimer = useRef(null);
-
   const tmdb = useMemo(() => buildTmdb(client), [client]);
-
-  const notify = (msg) => {
+  const notify = msg => {
     setToast(msg);
     window.clearTimeout(toastTimer.current);
     toastTimer.current = window.setTimeout(() => setToast(null), 3000);
   };
-
   const loadAccountData = useCallback(async () => {
     setLoaded(false);
     setLoadError(null);
-    const [entryResult, stateResult, profileResult] = await Promise.all([
-    client.from("diary_entries").select("*").eq("user_id", user.id).order("watched_date", { ascending: false }),
-    client.from("user_state").select("*").eq("user_id", user.id).single(),
-    client.from("profiles").select("*").eq("id", user.id).single()]
-    );
-
+    const [entryResult, stateResult, profileResult] = await Promise.all([client.from("diary_entries").select("*").eq("user_id", user.id).order("watched_date", {
+      ascending: false
+    }), client.from("user_state").select("*").eq("user_id", user.id).single(), client.from("profiles").select("*").eq("id", user.id).single()]);
     let nextEntries = {};
     let nextLists = [];
     let nextTop5 = [null, null, null, null, null];
     let nextMovieCache = {};
-
     if (!entryResult.error) {
-      (entryResult.data || []).forEach((row) => {
+      (entryResult.data || []).forEach(row => {
         const entry = rowToEntry(row);
         nextEntries[entry.id] = entry;
       });
@@ -571,12 +763,9 @@ function MovieDiary({ client, user, onSignOut }) {
     } else {
       nextEntries = await loadKey(userStoreKey(STORE.entries, user.id), {});
     }
-
     if (!stateResult.error && stateResult.data) {
       nextLists = stateResult.data.lists || [];
-      nextTop5 = Array.isArray(stateResult.data.top5) && stateResult.data.top5.length === 5 ?
-      stateResult.data.top5 :
-      nextTop5;
+      nextTop5 = Array.isArray(stateResult.data.top5) && stateResult.data.top5.length === 5 ? stateResult.data.top5 : nextTop5;
       nextMovieCache = stateResult.data.movie_cache || {};
       saveKey(userStoreKey(STORE.lists, user.id), nextLists);
       saveKey(userStoreKey(STORE.top5, user.id), nextTop5);
@@ -586,7 +775,6 @@ function MovieDiary({ client, user, onSignOut }) {
       nextTop5 = await loadKey(userStoreKey(STORE.top5, user.id), nextTop5);
       nextMovieCache = await loadKey(userStoreKey(STORE.movieCache, user.id), {});
     }
-
     setEntries(nextEntries);
     setLists(nextLists);
     setTop5(nextTop5);
@@ -597,33 +785,55 @@ function MovieDiary({ client, user, onSignOut }) {
     }
     setLoaded(true);
   }, [client, user.id]);
-
-  useEffect(() => {loadAccountData();}, [loadAccountData]);
-
-  const persistEntries = async (next) => {
-    const deletedIds = Object.keys(entries).filter((id) => !next[id]);
+  const loadSharedLists = useCallback(async () => {
+    const {
+      data,
+      error
+    } = await client.from("shared_lists").select(`
+        *,
+        profiles!shared_lists_owner_id_fkey (username, display_name, avatar_url),
+        shared_list_items (*)
+      `).order("created_at", {
+      ascending: false
+    });
+    if (error) {
+      if (!/does not exist|schema cache/i.test(error.message || "")) {
+        notify("Shared lists couldn't be refreshed.");
+      }
+      return;
+    }
+    setSharedLists((data || []).map(list => {
+      const items = [...(list.shared_list_items || [])].sort((a, b) => a.position - b.position);
+      return {
+        ...list,
+        shared: true,
+        movieIds: items.map(item => String(item.tmdb_id)),
+        items
+      };
+    }));
+  }, [client]);
+  useEffect(() => {
+    loadAccountData();
+    loadSharedLists();
+  }, [loadAccountData, loadSharedLists]);
+  const persistEntries = async next => {
+    const deletedIds = Object.keys(entries).filter(id => !next[id]);
     setEntries(next);
     saveKey(userStoreKey(STORE.entries, user.id), next);
-
     let error = null;
     if (deletedIds.length > 0) {
-      const result = await client.
-      from("diary_entries").
-      delete().
-      eq("user_id", user.id).
-      in("tmdb_id", deletedIds.map(Number));
+      const result = await client.from("diary_entries").delete().eq("user_id", user.id).in("tmdb_id", deletedIds.map(Number));
       error = result.error;
     }
     if (!error && Object.keys(next).length > 0) {
-      const result = await client.
-      from("diary_entries").
-      upsert(Object.values(next).map((entry) => entryToRow(entry, user.id)), { onConflict: "user_id,tmdb_id" });
+      const result = await client.from("diary_entries").upsert(Object.values(next).map(entry => entryToRow(entry, user.id)), {
+        onConflict: "user_id,tmdb_id"
+      });
       error = result.error;
     }
     if (error) notify("Cloud save failed. Your local copy is still intact.");
   };
-
-  const persistUserState = async (patch) => {
+  const persistUserState = async patch => {
     const payload = {
       user_id: user.id,
       lists: patch.lists !== undefined ? patch.lists : lists,
@@ -631,59 +841,171 @@ function MovieDiary({ client, user, onSignOut }) {
       movie_cache: patch.movieCache !== undefined ? patch.movieCache : movieCache,
       updated_at: new Date().toISOString()
     };
-    const { error } = await client.from("user_state").upsert(payload, { onConflict: "user_id" });
+    const {
+      error
+    } = await client.from("user_state").upsert(payload, {
+      onConflict: "user_id"
+    });
     if (error) notify("Cloud save failed. Your local copy is still intact.");
   };
-
-  const persistLists = async (next) => {
+  const persistLists = async next => {
     setLists(next);
     saveKey(userStoreKey(STORE.lists, user.id), next);
-    await persistUserState({ lists: next });
+    await persistUserState({
+      lists: next
+    });
   };
-  const persistTop5 = async (next) => {
+  const createSharedList = async name => {
+    const {
+      error
+    } = await client.from("shared_lists").insert({
+      owner_id: user.id,
+      name: name.trim()
+    });
+    if (error) return notify(`Couldn't create shared list: ${error.message}`);
+    await loadSharedLists();
+    notify("Shared list created.");
+  };
+  const deleteSharedList = async id => {
+    const {
+      error
+    } = await client.from("shared_lists").delete().eq("id", id).eq("owner_id", user.id);
+    if (error) return notify(`Couldn't delete shared list: ${error.message}`);
+    await loadSharedLists();
+    setView({
+      name: "lists"
+    });
+    notify("Shared list deleted.");
+  };
+  const updateSharedList = async (list, patch) => {
+    if (!list) return;
+    if (patch.name !== undefined) {
+      const {
+        error
+      } = await client.from("shared_lists").update({
+        name: patch.name
+      }).eq("id", list.id);
+      if (error) return notify(`Couldn't rename shared list: ${error.message}`);
+    }
+    if (patch.movieIds !== undefined) {
+      const nextIds = patch.movieIds.map(String);
+      const currentIds = list.movieIds.map(String);
+      const removed = currentIds.filter(id => !nextIds.includes(id));
+      if (removed.length) {
+        const {
+          error
+        } = await client.from("shared_list_items").delete().eq("list_id", list.id).in("tmdb_id", removed.map(Number));
+        if (error) return notify(`Couldn't update shared list: ${error.message}`);
+      }
+      const rows = nextIds.map((id, position) => {
+        const addedMovie = patch.addedMovie && String(patch.addedMovie.id) === id ? patch.addedMovie : null;
+        const cached = addedMovie ? {
+          title: addedMovie.title,
+          posterPath: addedMovie.poster_path || null,
+          releaseDate: addedMovie.release_date || ""
+        } : resolveMovie(id, entries, {
+          ...movieCache,
+          ...Object.fromEntries((list.items || []).map(item => [String(item.tmdb_id), {
+            title: item.title,
+            posterPath: item.poster_path,
+            releaseDate: item.release_date
+          }]))
+        });
+        return {
+          list_id: list.id,
+          tmdb_id: Number(id),
+          title: cached ? cached.title : "Untitled film",
+          poster_path: cached ? cached.posterPath : null,
+          release_date: cached ? cached.releaseDate : "",
+          position,
+          added_by: user.id
+        };
+      });
+      if (rows.length) {
+        const {
+          error
+        } = await client.from("shared_list_items").upsert(rows, {
+          onConflict: "list_id,tmdb_id"
+        });
+        if (error) return notify(`Couldn't update shared list: ${error.message}`);
+      }
+    }
+    await loadSharedLists();
+  };
+  const persistTop5 = async next => {
     setTop5(next);
     saveKey(userStoreKey(STORE.top5, user.id), next);
-    await persistUserState({ top5: next });
+    await persistUserState({
+      top5: next
+    });
   };
-  const persistMovieCache = async (next) => {
+  const persistMovieCache = async next => {
     setMovieCache(next);
     saveKey(userStoreKey(STORE.movieCache, user.id), next);
-    await persistUserState({ movieCache: next });
+    await persistUserState({
+      movieCache: next
+    });
   };
-  const cacheMovie = (movie) => {
+  const cacheMovie = movie => {
     const id = String(movie.id);
     if (entries[id] || movieCache[id]) return;
     persistMovieCache({
       ...movieCache,
-      [id]: { title: movie.title, posterPath: movie.poster_path || null, releaseDate: movie.release_date || "" }
+      [id]: {
+        title: movie.title,
+        posterPath: movie.poster_path || null,
+        releaseDate: movie.release_date || ""
+      }
     });
   };
-  const saveProfile = async ({ username, displayName, bio }) => {
+  const saveProfile = async ({
+    username,
+    displayName,
+    bio
+  }) => {
     const cleanUsername = username.trim().toLowerCase().replace(/[^a-z0-9_]/g, "");
     if (cleanUsername.length < 3) return "Username must be at least 3 letters, numbers, or underscores.";
-    const { data, error } = await client.
-    from("profiles").
-    update({
+    const {
+      data,
+      error
+    } = await client.from("profiles").update({
       username: cleanUsername,
       display_name: displayName.trim() || cleanUsername,
       bio: bio.trim().slice(0, 160)
-    }).
-    eq("id", user.id).
-    select().
-    single();
+    }).eq("id", user.id).select().single();
     if (error) return error.code === "23505" ? "That username is already taken." : error.message;
     setProfile(data);
     notify("Profile updated.");
     return null;
   };
-
-  const uploadAvatar = async (file) => {
+  const saveTheme = async themeKey => {
+    if (!THEMES.some(theme => theme.key === themeKey)) return "Unknown theme.";
+    const previous = profile;
+    setProfile(current => ({
+      ...(current || {}),
+      theme_key: themeKey
+    }));
+    const {
+      data,
+      error
+    } = await client.from("profiles").update({
+      theme_key: themeKey
+    }).eq("id", user.id).select().single();
+    if (error) {
+      setProfile(previous);
+      return error.message;
+    }
+    setProfile(data);
+    notify("Theme updated.");
+    return null;
+  };
+  const uploadAvatar = async file => {
     try {
       const avatarBlob = await makeAvatarBlob(file);
       const avatarPath = `${user.id}/avatar.jpg`;
-      const { error: uploadError } = await client.storage.
-      from("avatars").
-      upload(avatarPath, avatarBlob, {
+      const {
+        error: uploadError
+      } = await client.storage.from("avatars").upload(avatarPath, avatarBlob, {
         upsert: true,
         contentType: "image/jpeg",
         cacheControl: "3600"
@@ -694,25 +1016,26 @@ function MovieDiary({ client, user, onSignOut }) {
         }
         return uploadError.message;
       }
-
-      const { data: publicData } = client.storage.from("avatars").getPublicUrl(avatarPath);
+      const {
+        data: publicData
+      } = client.storage.from("avatars").getPublicUrl(avatarPath);
       const avatarUrl = `${publicData.publicUrl}?v=${Date.now()}`;
-      const { data, error } = await client.
-      from("profiles").
-      update({ avatar_url: avatarUrl, avatar_path: avatarPath }).
-      eq("id", user.id).
-      select().
-      single();
+      const {
+        data,
+        error
+      } = await client.from("profiles").update({
+        avatar_url: avatarUrl,
+        avatar_path: avatarPath
+      }).eq("id", user.id).select().single();
       if (error) return error.message;
       setProfile(data);
-      setFeedVersion((version) => version + 1);
+      setFeedVersion(version => version + 1);
       notify("Profile picture updated.");
       return null;
     } catch (error) {
       return error.message || "That picture couldn't be uploaded.";
     }
   };
-
   const importLegacyDiary = async () => {
     const local = {
       [STORE.entries]: await loadKey(STORE.entries, {}),
@@ -722,231 +1045,294 @@ function MovieDiary({ client, user, onSignOut }) {
     };
     const legacyResult = await client.from(SYNC_TABLE).select("key, value");
     if (!legacyResult.error) {
-      (legacyResult.data || []).forEach((row) => {local[row.key] = row.value;});
+      (legacyResult.data || []).forEach(row => {
+        local[row.key] = row.value;
+      });
     }
     const legacyEntries = local[STORE.entries] || {};
-    const rows = Object.values(legacyEntries).
-    filter((entry) => entry && entry.id && entry.rating && entry.watchedDate).
-    map((entry) => entryToRow(entry, user.id));
+    const rows = Object.values(legacyEntries).filter(entry => entry && entry.id && entry.rating && entry.watchedDate).map(entry => entryToRow(entry, user.id));
     if (rows.length === 0) return "No legacy diary entries were found.";
-
-    const { error: entryError } = await client.
-    from("diary_entries").
-    upsert(rows, { onConflict: "user_id,tmdb_id" });
+    const {
+      error: entryError
+    } = await client.from("diary_entries").upsert(rows, {
+      onConflict: "user_id,tmdb_id"
+    });
     if (entryError) return entryError.message;
-    const { error: stateError } = await client.from("user_state").upsert({
+    const {
+      error: stateError
+    } = await client.from("user_state").upsert({
       user_id: user.id,
       lists: local[STORE.lists] || [],
       top5: local[STORE.top5] || [null, null, null, null, null],
       movie_cache: local[STORE.movieCache] || {},
       updated_at: new Date().toISOString()
-    }, { onConflict: "user_id" });
+    }, {
+      onConflict: "user_id"
+    });
     if (stateError) return stateError.message;
     await loadAccountData();
     notify(`Imported ${rows.length} films into your account.`);
     return null;
   };
-
   const entryList = useMemo(() => Object.values(entries), [entries]);
-
-  const addEntry = async (entry) => {
-    await persistEntries({ ...entries, [entry.id]: entry });
-    setFeedVersion((version) => version + 1);
+  const addEntry = async entry => {
+    await persistEntries({
+      ...entries,
+      [entry.id]: entry
+    });
+    setFeedVersion(version => version + 1);
     notify(`Logged “${entry.title}.”`);
   };
-
   const updateEntry = async (id, patch) => {
     if (!entries[id]) return;
-    await persistEntries({ ...entries, [id]: { ...entries[id], ...patch } });
-    setFeedVersion((version) => version + 1);
+    await persistEntries({
+      ...entries,
+      [id]: {
+        ...entries[id],
+        ...patch
+      }
+    });
+    setFeedVersion(version => version + 1);
   };
-
-  const deleteEntry = async (id) => {
-    const next = { ...entries };
+  const deleteEntry = async id => {
+    const next = {
+      ...entries
+    };
     delete next[id];
     await persistEntries(next);
-    await persistLists(lists.map((l) => ({ ...l, movieIds: l.movieIds.filter((m) => m !== id) })));
-    await persistTop5(top5.map((m) => m === id ? null : m));
-    setFeedVersion((version) => version + 1);
-    setView({ name: "diary" });
+    await persistLists(lists.map(l => ({
+      ...l,
+      movieIds: l.movieIds.filter(m => m !== id)
+    })));
+    await persistTop5(top5.map(m => m === id ? null : m));
+    setFeedVersion(version => version + 1);
+    setView({
+      name: "diary"
+    });
     notify("Entry removed.");
   };
-
-  const activeNav = view.name === "detail" ? "diary" : view.name === "list" ? "lists" : view.name;
-
+  const activeNav = view.name === "detail" ? "diary" : view.name === "list" ? "lists" : view.name === "member" ? "feed" : view.name;
+  const sharedMovieCache = useMemo(() => Object.fromEntries(sharedLists.flatMap(list => (list.items || []).map(item => [String(item.tmdb_id), {
+    title: item.title,
+    posterPath: item.poster_path,
+    releaseDate: item.release_date || ""
+  }]))), [sharedLists]);
+  const allLists = useMemo(() => [...lists, ...sharedLists], [lists, sharedLists]);
   if (!loaded) {
-    return (/*#__PURE__*/
-      React.createElement("div", { className: "mvd" }, /*#__PURE__*/
-      React.createElement(StyleTag, null), /*#__PURE__*/
-      React.createElement("div", { className: "app-loader" }, /*#__PURE__*/
-      React.createElement("span", null, "dimming the lights")
-      )
-      ));
-
+    return /*#__PURE__*/React.createElement("div", {
+      className: "mvd"
+    }, /*#__PURE__*/React.createElement(StyleTag, null), /*#__PURE__*/React.createElement("div", {
+      className: "app-loader"
+    }, /*#__PURE__*/React.createElement("span", null, "dimming the lights")));
   }
-
-  return (/*#__PURE__*/
-    React.createElement("div", { className: "mvd" }, /*#__PURE__*/
-    React.createElement(StyleTag, null), /*#__PURE__*/
-    React.createElement("header", { className: "topbar" }, /*#__PURE__*/
-    React.createElement("div", { className: "topbar-inner" }, /*#__PURE__*/
-    React.createElement("button", { className: "brand", onClick: () => setView({ name: "feed" }), "aria-label": "Marquee home" }, /*#__PURE__*/
-    React.createElement(LogoMark, { size: 26 }), /*#__PURE__*/
-    React.createElement("span", null, "MARQUEE")
-    ), /*#__PURE__*/
-    React.createElement("nav", { className: "desktop-nav", "aria-label": "Main" },
-    NAV_ITEMS.map(({ name, label }) => /*#__PURE__*/
-    React.createElement("button", {
-      key: name,
-      className: activeNav === name ? "active" : "",
-      "aria-current": activeNav === name ? "page" : undefined,
-      onClick: () => setView({ name }) },
-
+  return /*#__PURE__*/React.createElement("div", {
+    className: "mvd",
+    "data-theme": profile && profile.theme_key ? profile.theme_key : "marquee"
+  }, /*#__PURE__*/React.createElement(StyleTag, null), /*#__PURE__*/React.createElement("header", {
+    className: "topbar"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "topbar-inner"
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "brand",
+    onClick: () => setView({
+      name: "feed"
+    }),
+    "aria-label": "Marquee home"
+  }, /*#__PURE__*/React.createElement(LogoMark, {
+    size: 26
+  }), /*#__PURE__*/React.createElement("span", null, "MARQUEE")), /*#__PURE__*/React.createElement("nav", {
+    className: "desktop-nav",
+    "aria-label": "Main"
+  }, NAV_ITEMS.map(({
+    name,
     label
-    )
-    ), /*#__PURE__*/
-    React.createElement("button", { className: "desktop-log", onClick: () => setLogOpen(true) }, "Log")
-    )
-    )
-    ), /*#__PURE__*/
-
-    React.createElement("main", { className: "stage" },
-    loadError && /*#__PURE__*/React.createElement("div", { className: "notice error" }, loadError),
-    view.name === "feed" && /*#__PURE__*/React.createElement(FeedPage, { key: feedVersion, client: client, currentUserId: user.id }),
-    view.name === "diary" && /*#__PURE__*/
-    React.createElement(FilmsPage, {
-      entries: entries,
-      entryList: entryList,
-      top5: top5,
-      onChangeTop5: persistTop5,
-      openDetail: (id) => setView({ name: "detail", id }),
-      onLog: () => setLogOpen(true) }
-    ),
-
-    view.name === "detail" && entries[view.id] && /*#__PURE__*/
-    React.createElement(DetailPage, {
-      entry: entries[view.id],
-      tmdb: tmdb,
-      lists: lists,
-      onBack: () => setView({ name: "diary" }),
-      onUpdate: (patch) => updateEntry(view.id, patch),
-      onDelete: () => deleteEntry(view.id),
-      onAddToList: (listId) => {
-        const next = lists.map((l) =>
-        l.id === listId && !l.movieIds.includes(view.id) ?
-        { ...l, movieIds: [...l.movieIds, view.id] } :
-        l
-        );
+  }) => /*#__PURE__*/React.createElement("button", {
+    key: name,
+    className: activeNav === name ? "active" : "",
+    "aria-current": activeNav === name ? "page" : undefined,
+    onClick: () => setView({
+      name
+    })
+  }, label)), /*#__PURE__*/React.createElement("button", {
+    className: "desktop-log",
+    onClick: () => setLogOpen(true)
+  }, "Log")))), /*#__PURE__*/React.createElement("main", {
+    className: "stage"
+  }, loadError && /*#__PURE__*/React.createElement("div", {
+    className: "notice error"
+  }, loadError), view.name === "feed" && /*#__PURE__*/React.createElement(FeedPage, {
+    key: feedVersion,
+    client: client,
+    currentUserId: user.id,
+    onOpenProfile: id => setView({
+      name: "member",
+      id
+    })
+  }), view.name === "member" && /*#__PURE__*/React.createElement(MemberProfilePage, {
+    client: client,
+    userId: view.id,
+    onBack: () => setView({
+      name: "feed"
+    })
+  }), view.name === "diary" && /*#__PURE__*/React.createElement(FilmsPage, {
+    entries: entries,
+    entryList: entryList,
+    top5: top5,
+    onChangeTop5: persistTop5,
+    openDetail: id => setView({
+      name: "detail",
+      id
+    }),
+    onLog: () => setLogOpen(true)
+  }), view.name === "detail" && entries[view.id] && /*#__PURE__*/React.createElement(DetailPage, {
+    entry: entries[view.id],
+    tmdb: tmdb,
+    lists: allLists,
+    onBack: () => setView({
+      name: "diary"
+    }),
+    onUpdate: patch => updateEntry(view.id, patch),
+    onDelete: () => deleteEntry(view.id),
+    onAddToList: listId => {
+      const target = allLists.find(list => list.id === listId);
+      if (target && target.shared) {
+        if (!target.movieIds.includes(view.id)) {
+          updateSharedList(target, {
+            movieIds: [...target.movieIds, view.id]
+          });
+        }
+      } else {
+        const next = lists.map(l => l.id === listId && !l.movieIds.includes(view.id) ? {
+          ...l,
+          movieIds: [...l.movieIds, view.id]
+        } : l);
         persistLists(next);
-        notify("Added to list.");
-      },
-      notify: notify }
-    ),
-
-    view.name === "lists" && /*#__PURE__*/
-    React.createElement(ListsPage, {
-      lists: lists,
-      entries: entries,
-      movieCache: movieCache,
-      onCreate: (name) => persistLists([...lists, { id: uid(), name, movieIds: [] }]),
-      onOpen: (id) => setView({ name: "list", id }),
-      onDelete: (id) => persistLists(lists.filter((l) => l.id !== id)) }
-    ),
-
-    view.name === "list" && /*#__PURE__*/
-    React.createElement(ListDetail, {
-      list: lists.find((l) => l.id === view.id),
-      entries: entries,
-      movieCache: movieCache,
-      tmdb: tmdb,
-      onCacheMovie: cacheMovie,
-      onBack: () => setView({ name: "lists" }),
-      onOpenMovie: (id) => setView({ name: "detail", id }),
-      onUpdate: (patch) =>
-      persistLists(lists.map((l) => l.id === view.id ? { ...l, ...patch } : l)) }
-
-    ),
-
-    view.name === "stats" && /*#__PURE__*/React.createElement(StatsPage, { entries: entryList }),
-    view.name === "settings" && /*#__PURE__*/
-    React.createElement(SettingsPage, {
-      profile: profile,
-      email: user.email,
-      onSaveProfile: saveProfile,
-      onUploadAvatar: uploadAvatar,
-      onImportLegacy: importLegacyDiary,
-      onSignOut: onSignOut,
-      onOpenStats: () => setView({ name: "stats" }) }
-    )
-
-    ), /*#__PURE__*/
-
-    React.createElement("nav", { className: "bottombar", "aria-label": "Main" },
-    MOBILE_NAV_ITEMS.slice(0, 2).map(({ name, label }) => /*#__PURE__*/
-    React.createElement("button", {
-      key: name,
-      className: "tab-link" + (activeNav === name ? " active" : ""),
-      "aria-current": activeNav === name ? "page" : undefined,
-      onClick: () => setView({ name }) }, /*#__PURE__*/
-
-    React.createElement("span", { className: "tab-label" }, label)
-    )
-    ), /*#__PURE__*/
-    React.createElement("button", { className: "tab-link-log", onClick: () => setLogOpen(true), "aria-label": "Log a movie" }, /*#__PURE__*/
-    React.createElement("span", { className: "tab-link-log-label" }, "Log")
-    ),
-    MOBILE_NAV_ITEMS.slice(2).map(({ name, label }) => /*#__PURE__*/
-    React.createElement("button", {
-      key: name,
-      className: "tab-link" + (activeNav === name ? " active" : ""),
-      "aria-current": activeNav === name ? "page" : undefined,
-      onClick: () => setView({ name }) }, /*#__PURE__*/
-
-    React.createElement("span", { className: "tab-label" }, label)
-    )
-    )
-    ),
-
-    logOpen && /*#__PURE__*/
-    React.createElement(LogModal, {
-      tmdb: tmdb,
-      existing: entries,
-      onClose: () => setLogOpen(false),
-      onSave: async (entry) => {
-        await addEntry(entry);
-        setLogOpen(false);
-      } }
-    ),
-
-
-    toast && /*#__PURE__*/React.createElement("div", { className: "toast", role: "status" }, toast)
-    ));
-
+      }
+      notify("Added to list.");
+    },
+    notify: notify
+  }), view.name === "lists" && /*#__PURE__*/React.createElement(ListsPage, {
+    lists: lists,
+    sharedLists: sharedLists,
+    entries: entries,
+    movieCache: {
+      ...movieCache,
+      ...sharedMovieCache
+    },
+    currentUserId: user.id,
+    onCreate: (name, shared) => shared ? createSharedList(name) : persistLists([...lists, {
+      id: uid(),
+      name,
+      movieIds: []
+    }]),
+    onOpen: id => setView({
+      name: "list",
+      id
+    }),
+    onDelete: (id, shared) => shared ? deleteSharedList(id) : persistLists(lists.filter(l => l.id !== id))
+  }), view.name === "list" && /*#__PURE__*/React.createElement(ListDetail, {
+    list: allLists.find(l => l.id === view.id),
+    entries: entries,
+    movieCache: {
+      ...movieCache,
+      ...sharedMovieCache
+    },
+    tmdb: tmdb,
+    onCacheMovie: cacheMovie,
+    currentUserId: user.id,
+    onBack: () => setView({
+      name: "lists"
+    }),
+    onOpenMovie: id => setView({
+      name: "detail",
+      id
+    }),
+    onUpdate: patch => {
+      const target = allLists.find(list => list.id === view.id);
+      return target && target.shared ? updateSharedList(target, patch) : persistLists(lists.map(l => l.id === view.id ? {
+        ...l,
+        ...patch
+      } : l));
+    }
+  }), view.name === "stats" && /*#__PURE__*/React.createElement(StatsPage, {
+    entries: entryList
+  }), view.name === "settings" && /*#__PURE__*/React.createElement(SettingsPage, {
+    profile: profile,
+    email: user.email,
+    onSaveProfile: saveProfile,
+    onChangeTheme: saveTheme,
+    onUploadAvatar: uploadAvatar,
+    onImportLegacy: importLegacyDiary,
+    onSignOut: onSignOut,
+    onOpenStats: () => setView({
+      name: "stats"
+    })
+  })), /*#__PURE__*/React.createElement("nav", {
+    className: "bottombar",
+    "aria-label": "Main"
+  }, MOBILE_NAV_ITEMS.slice(0, 2).map(({
+    name,
+    label
+  }) => /*#__PURE__*/React.createElement("button", {
+    key: name,
+    className: "tab-link" + (activeNav === name ? " active" : ""),
+    "aria-current": activeNav === name ? "page" : undefined,
+    onClick: () => setView({
+      name
+    })
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "tab-label"
+  }, label))), /*#__PURE__*/React.createElement("button", {
+    className: "tab-link-log",
+    onClick: () => setLogOpen(true),
+    "aria-label": "Log a movie"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "tab-link-log-label"
+  }, "Log")), MOBILE_NAV_ITEMS.slice(2).map(({
+    name,
+    label
+  }) => /*#__PURE__*/React.createElement("button", {
+    key: name,
+    className: "tab-link" + (activeNav === name ? " active" : ""),
+    "aria-current": activeNav === name ? "page" : undefined,
+    onClick: () => setView({
+      name
+    })
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "tab-label"
+  }, label)))), logOpen && /*#__PURE__*/React.createElement(LogModal, {
+    tmdb: tmdb,
+    existing: entries,
+    onClose: () => setLogOpen(false),
+    onSave: async entry => {
+      await addEntry(entry);
+      setLogOpen(false);
+    }
+  }), toast && /*#__PURE__*/React.createElement("div", {
+    className: "toast",
+    role: "status"
+  }, toast));
 }
 
 /* ---------------- diary grid ---------------- */
 
-function Top5Strip({ top5, entries, onChange, onOpenMovie }) {
+function Top5Strip({
+  top5,
+  entries,
+  onChange,
+  onOpenMovie
+}) {
   const [pickingSlot, setPickingSlot] = useState(null);
   const [filter, setFilter] = useState("");
   const [editing, setEditing] = useState(false);
-
-  const candidates = useMemo(
-    () =>
-    Object.values(entries).
-    filter((e) => e.title.toLowerCase().includes(filter.toLowerCase())).
-    sort((a, b) => b.rating - a.rating),
-    [entries, filter]
-  );
-
+  const candidates = useMemo(() => Object.values(entries).filter(e => e.title.toLowerCase().includes(filter.toLowerCase())).sort((a, b) => b.rating - a.rating), [entries, filter]);
   const setSlot = (slot, id) => {
-    const next = top5.map((m) => m === id ? null : m); // no duplicates
+    const next = top5.map(m => m === id ? null : m); // no duplicates
     next[slot] = id;
     onChange(next);
     setPickingSlot(null);
     setFilter("");
   };
-
   const move = (idx, dir) => {
     const j = idx + dir;
     if (j < 0 || j > 4) return;
@@ -954,117 +1340,131 @@ function Top5Strip({ top5, entries, onChange, onOpenMovie }) {
     [next[idx], next[j]] = [next[j], next[idx]];
     onChange(next);
   };
-
-  return (/*#__PURE__*/
-    React.createElement("div", { className: "top5-strip" }, /*#__PURE__*/
-    React.createElement("div", { className: "top5-head" }, /*#__PURE__*/
-    React.createElement("div", null, /*#__PURE__*/
-    React.createElement("div", { className: "eyebrow" }, "Personal ranking"), /*#__PURE__*/
-    React.createElement("h2", null, "Your Top 5")
-    ), /*#__PURE__*/
-    React.createElement("button", {
-      className: "btn-ghost" + (editing ? " active" : ""),
-      onClick: () => setEditing((value) => !value),
-      "aria-pressed": editing },
-
-    editing ? "Done" : "Edit"
-    )
-    ), /*#__PURE__*/
-    React.createElement("ol", { className: "marquee-board" },
-    top5.map((id, idx) => {
-      const e = id ? entries[id] : null;
-      const p = e ? e.chosenPoster || e.posterPath : null;
-      return (/*#__PURE__*/
-        React.createElement("li", { className: "marquee-slot" + (e ? " filled" : ""), key: idx }, /*#__PURE__*/
-        React.createElement("span", { className: "marquee-rank", "aria-hidden": "true" }, String(idx + 1).padStart(2, "0")),
-        e ? /*#__PURE__*/
-        React.createElement(React.Fragment, null, /*#__PURE__*/
-        React.createElement("button", { className: "marquee-poster", onClick: () => onOpenMovie(id), "aria-label": `Open ${e.title}` },
-        p ? /*#__PURE__*/React.createElement("img", { src: IMG + "w342" + p, alt: "", loading: "lazy" }) : /*#__PURE__*/React.createElement("div", { className: "poster-blank" }, /*#__PURE__*/React.createElement("span", null, e.title))
-        ), /*#__PURE__*/
-        React.createElement("div", { className: "marquee-title" }, e.title),
-        editing && /*#__PURE__*/
-        React.createElement("div", { className: "rank-controls" }, /*#__PURE__*/
-        React.createElement("button", { className: "icon-btn", onClick: () => move(idx, -1), disabled: idx === 0, "aria-label": "Move up in ranking" }, "\u2190"), /*#__PURE__*/
-        React.createElement("button", { className: "icon-btn", onClick: () => move(idx, 1), disabled: idx === 4, "aria-label": "Move down in ranking" }, "\u2192"), /*#__PURE__*/
-        React.createElement("button", { className: "btn-ghost", onClick: () => setPickingSlot(idx), "aria-label": `Replace number ${idx + 1}` }, "Replace"), /*#__PURE__*/
-        React.createElement("button", { className: "icon-btn danger", onClick: () => setSlot(idx, null), "aria-label": `Clear number ${idx + 1}` }, "\u2715")
-        )
-
-        ) : /*#__PURE__*/
-
-        React.createElement("button", { className: "marquee-empty", onClick: () => setPickingSlot(idx), "aria-label": `Pick film number ${idx + 1}` }, /*#__PURE__*/
-        React.createElement(IconPlus, null), /*#__PURE__*/
-        React.createElement("span", null, "Pick a film")
-        )
-
-        ));
-
-    })
-    ),
-
-    pickingSlot != null && /*#__PURE__*/
-    React.createElement("div", { className: "overlay", onMouseDown: (e) => e.target === e.currentTarget && setPickingSlot(null) }, /*#__PURE__*/
-    React.createElement("div", { className: "modal", role: "dialog", "aria-modal": "true", "aria-label": `Pick number ${pickingSlot + 1}` }, /*#__PURE__*/
-    React.createElement("div", { className: "modal-head" }, /*#__PURE__*/
-    React.createElement("h2", null, "Choose a film"), /*#__PURE__*/
-    React.createElement("button", { className: "btn-ghost", onClick: () => setPickingSlot(null), "aria-label": "Close" }, "\u2715")
-    ),
-    Object.keys(entries).length === 0 ? /*#__PURE__*/
-    React.createElement("p", { className: "quiet-note" }, "Log some movies first \u2014 the Top 5 draws from your films.") : /*#__PURE__*/
-
-    React.createElement(React.Fragment, null, /*#__PURE__*/
-    React.createElement("input", {
-      className: "search-big",
-      type: "search",
-      placeholder: "Filter your films\u2026",
-      value: filter,
-      onChange: (e) => setFilter(e.target.value),
-      autoFocus: true }
-    ), /*#__PURE__*/
-    React.createElement("ul", { className: "results" },
-    candidates.map((e) => /*#__PURE__*/
-    React.createElement("li", { key: e.id }, /*#__PURE__*/
-    React.createElement("button", { className: "result", onClick: () => setSlot(pickingSlot, e.id) },
-    e.chosenPoster || e.posterPath ? /*#__PURE__*/
-    React.createElement("img", { src: IMG + "w92" + (e.chosenPoster || e.posterPath), alt: "", loading: "lazy" }) : /*#__PURE__*/
-
-    React.createElement("div", { className: "thumb-blank" }), /*#__PURE__*/
-
-    React.createElement("span", { className: "result-title" }, e.title), /*#__PURE__*/
-    React.createElement("span", { className: "result-year" }, yearOf(e)), /*#__PURE__*/
-    React.createElement(StarDisplay, { value: e.rating, size: 12 })
-    )
-    )
-    )
-    )
-    )
-
-    )
-    )
-
-    ));
-
+  return /*#__PURE__*/React.createElement("div", {
+    className: "top5-strip"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "top5-head"
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    className: "eyebrow"
+  }, "Personal ranking"), /*#__PURE__*/React.createElement("h2", null, "Your Top 5")), /*#__PURE__*/React.createElement("button", {
+    className: "btn-ghost" + (editing ? " active" : ""),
+    onClick: () => setEditing(value => !value),
+    "aria-pressed": editing
+  }, editing ? "Done" : "Edit")), /*#__PURE__*/React.createElement("ol", {
+    className: "marquee-board"
+  }, top5.map((id, idx) => {
+    const e = id ? entries[id] : null;
+    const p = e ? e.chosenPoster || e.posterPath : null;
+    return /*#__PURE__*/React.createElement("li", {
+      className: "marquee-slot" + (e ? " filled" : ""),
+      key: idx
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "marquee-rank",
+      "aria-hidden": "true"
+    }, String(idx + 1).padStart(2, "0")), e ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("button", {
+      className: "marquee-poster",
+      onClick: () => onOpenMovie(id),
+      "aria-label": `Open ${e.title}`
+    }, p ? /*#__PURE__*/React.createElement("img", {
+      src: IMG + "w342" + p,
+      alt: "",
+      loading: "lazy"
+    }) : /*#__PURE__*/React.createElement("div", {
+      className: "poster-blank"
+    }, /*#__PURE__*/React.createElement("span", null, e.title))), /*#__PURE__*/React.createElement("div", {
+      className: "marquee-title"
+    }, e.title), editing && /*#__PURE__*/React.createElement("div", {
+      className: "rank-controls"
+    }, /*#__PURE__*/React.createElement("button", {
+      className: "icon-btn",
+      onClick: () => move(idx, -1),
+      disabled: idx === 0,
+      "aria-label": "Move up in ranking"
+    }, "←"), /*#__PURE__*/React.createElement("button", {
+      className: "icon-btn",
+      onClick: () => move(idx, 1),
+      disabled: idx === 4,
+      "aria-label": "Move down in ranking"
+    }, "→"), /*#__PURE__*/React.createElement("button", {
+      className: "btn-ghost",
+      onClick: () => setPickingSlot(idx),
+      "aria-label": `Replace number ${idx + 1}`
+    }, "Replace"), /*#__PURE__*/React.createElement("button", {
+      className: "icon-btn danger",
+      onClick: () => setSlot(idx, null),
+      "aria-label": `Clear number ${idx + 1}`
+    }, "✕"))) : /*#__PURE__*/React.createElement("button", {
+      className: "marquee-empty",
+      onClick: () => setPickingSlot(idx),
+      "aria-label": `Pick film number ${idx + 1}`
+    }, /*#__PURE__*/React.createElement(IconPlus, null), /*#__PURE__*/React.createElement("span", null, "Pick a film")));
+  })), pickingSlot != null && /*#__PURE__*/React.createElement("div", {
+    className: "overlay",
+    onMouseDown: e => e.target === e.currentTarget && setPickingSlot(null)
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "modal",
+    role: "dialog",
+    "aria-modal": "true",
+    "aria-label": `Pick number ${pickingSlot + 1}`
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "modal-head"
+  }, /*#__PURE__*/React.createElement("h2", null, "Choose a film"), /*#__PURE__*/React.createElement("button", {
+    className: "btn-ghost",
+    onClick: () => setPickingSlot(null),
+    "aria-label": "Close"
+  }, "✕")), Object.keys(entries).length === 0 ? /*#__PURE__*/React.createElement("p", {
+    className: "quiet-note"
+  }, "Log some movies first — the Top 5 draws from your films.") : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("input", {
+    className: "search-big",
+    type: "search",
+    placeholder: "Filter your films…",
+    value: filter,
+    onChange: e => setFilter(e.target.value),
+    autoFocus: true
+  }), /*#__PURE__*/React.createElement("ul", {
+    className: "results"
+  }, candidates.map(e => /*#__PURE__*/React.createElement("li", {
+    key: e.id
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "result",
+    onClick: () => setSlot(pickingSlot, e.id)
+  }, e.chosenPoster || e.posterPath ? /*#__PURE__*/React.createElement("img", {
+    src: IMG + "w92" + (e.chosenPoster || e.posterPath),
+    alt: "",
+    loading: "lazy"
+  }) : /*#__PURE__*/React.createElement("div", {
+    className: "thumb-blank"
+  }), /*#__PURE__*/React.createElement("span", {
+    className: "result-title"
+  }, e.title), /*#__PURE__*/React.createElement("span", {
+    className: "result-year"
+  }, yearOf(e)), /*#__PURE__*/React.createElement(StarDisplay, {
+    value: e.rating,
+    size: 12
+  })))))))));
 }
 
 /* ---------------- films page (Top 5 + grid) ---------------- */
 
-function FilmsPage({ entries, entryList, top5, onChangeTop5, openDetail, onLog }) {
+function FilmsPage({
+  entries,
+  entryList,
+  top5,
+  onChangeTop5,
+  openDetail,
+  onLog
+}) {
   const [tab, setTab] = useState("all"); // 'all' | 'top5'
   const [sort, setSort] = useState("watched-desc");
   const [minRating, setMinRating] = useState(0);
   const [query, setQuery] = useState("");
   const [searchOpen, setSearchOpen] = useState(false);
   const searchRef = useRef(null);
-
   useEffect(() => {
     if (searchOpen && searchRef.current) searchRef.current.focus();
   }, [searchOpen]);
-
   const shown = useMemo(() => {
-    let list = entryList.filter(
-      (e) => e.rating >= minRating && e.title.toLowerCase().includes(query.toLowerCase())
-    );
+    let list = entryList.filter(e => e.rating >= minRating && e.title.toLowerCase().includes(query.toLowerCase()));
     const by = {
       "watched-desc": (a, b) => b.watchedDate.localeCompare(a.watchedDate) || b.loggedAt - a.loggedAt,
       "watched-asc": (a, b) => a.watchedDate.localeCompare(b.watchedDate) || a.loggedAt - b.loggedAt,
@@ -1076,199 +1476,407 @@ function FilmsPage({ entries, entryList, top5, onChangeTop5, openDetail, onLog }
     };
     return [...list].sort(by[sort]);
   }, [entryList, sort, minRating, query]);
-
   const closeSearch = () => {
     setQuery("");
     setSearchOpen(false);
   };
-
   if (entryList.length === 0) {
-    return (/*#__PURE__*/
-      React.createElement("section", null, /*#__PURE__*/
-      React.createElement("div", { className: "empty-house" }, /*#__PURE__*/
-      React.createElement("div", { className: "empty-mark", "aria-hidden": "true" }, "01"), /*#__PURE__*/
-      React.createElement("h2", null, "Nothing logged yet"), /*#__PURE__*/
-      React.createElement("p", null, "Log the first movie you've watched to start your film archive."), /*#__PURE__*/
-      React.createElement("button", { className: "btn-log", onClick: onLog }, "+ Log a movie")
-      )
-      ));
-
+    return /*#__PURE__*/React.createElement("section", null, /*#__PURE__*/React.createElement("div", {
+      className: "empty-house"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "empty-mark",
+      "aria-hidden": "true"
+    }, "01"), /*#__PURE__*/React.createElement("h2", null, "Nothing logged yet"), /*#__PURE__*/React.createElement("p", null, "Log the first movie you've watched to start your film archive."), /*#__PURE__*/React.createElement("button", {
+      className: "btn-log",
+      onClick: onLog
+    }, "+ Log a movie")));
   }
-
-  return (/*#__PURE__*/
-    React.createElement("section", null, /*#__PURE__*/
-    React.createElement("div", { className: "films-head" }, /*#__PURE__*/
-    React.createElement("h1", { className: "page-head" }, "Films"), /*#__PURE__*/
-    React.createElement("div", { className: "top-tabs", role: "tablist", "aria-label": "Films view" }, /*#__PURE__*/
-    React.createElement("button", {
-      role: "tab",
-      "aria-selected": tab === "all",
-      className: "top-tab" + (tab === "all" ? " active" : ""),
-      onClick: () => setTab("all") },
-    "Films"
-
-    ), /*#__PURE__*/
-    React.createElement("button", {
-      role: "tab",
-      "aria-selected": tab === "top5",
-      className: "top-tab" + (tab === "top5" ? " active" : ""),
-      onClick: () => setTab("top5") },
-    "Top 5"
-
-    )
-    )
-    ),
-
-    tab === "top5" ? /*#__PURE__*/
-    React.createElement(Top5Strip, { top5: top5, entries: entries, onChange: onChangeTop5, onOpenMovie: openDetail }) : /*#__PURE__*/
-
-    React.createElement(React.Fragment, null, /*#__PURE__*/
-    React.createElement("div", { className: "controls-collapsed" }, /*#__PURE__*/
-    React.createElement("select", { className: "pill-select", value: sort, onChange: (e) => setSort(e.target.value), "aria-label": "Sort by" }, /*#__PURE__*/
-    React.createElement("option", { value: "watched-desc" }, "Newest"), /*#__PURE__*/
-    React.createElement("option", { value: "watched-asc" }, "Oldest"), /*#__PURE__*/
-    React.createElement("option", { value: "rating-desc" }, "Highest rated"), /*#__PURE__*/
-    React.createElement("option", { value: "rating-asc" }, "Lowest rated"), /*#__PURE__*/
-    React.createElement("option", { value: "title" }, "Title A\u2013Z"), /*#__PURE__*/
-    React.createElement("option", { value: "year-desc" }, "Release year: newest"), /*#__PURE__*/
-    React.createElement("option", { value: "year-asc" }, "Release year: oldest")
-    ), /*#__PURE__*/
-    React.createElement("select", {
-      className: "pill-select",
-      value: minRating,
-      onChange: (e) => setMinRating(Number(e.target.value)),
-      "aria-label": "Minimum rating" }, /*#__PURE__*/
-
-    React.createElement("option", { value: 0 }, "Any rating"),
-    [1, 2, 3, 3.5, 4, 4.5, 5].map((r) => /*#__PURE__*/
-    React.createElement("option", { key: r, value: r }, r, "+ rating")
-    )
-    ),
-
-    searchOpen ? /*#__PURE__*/
-    React.createElement("div", { className: "search-expand" }, /*#__PURE__*/
-    React.createElement("input", {
-      ref: searchRef,
-      type: "search",
-      placeholder: "Search your films\u2026",
-      value: query,
-      onChange: (e) => setQuery(e.target.value),
-      onBlur: () => {if (!query) setSearchOpen(false);} }
-    ), /*#__PURE__*/
-    React.createElement("button", { className: "icon-btn", onClick: closeSearch, "aria-label": "Close search" }, "\u2715")
-    ) : /*#__PURE__*/
-
-    React.createElement("button", { className: "icon-btn", onClick: () => setSearchOpen(true), "aria-label": "Search your films" }, /*#__PURE__*/
-    React.createElement(IconSearch, null)
-    ), /*#__PURE__*/
-
-
-    React.createElement("span", { className: "count" }, shown.length, " of ", entryList.length)
-    ), /*#__PURE__*/
-
-    React.createElement("div", { className: "grid" },
-    shown.map((e) => /*#__PURE__*/
-    React.createElement(FilmCard, { key: e.id, entry: e, onOpen: () => openDetail(e.id) })
-    )
-    ),
-    shown.length === 0 && /*#__PURE__*/React.createElement("p", { className: "quiet-note" }, "No films match those filters.")
-    )
-
-    ));
-
+  return /*#__PURE__*/React.createElement("section", null, /*#__PURE__*/React.createElement("div", {
+    className: "films-head"
+  }, /*#__PURE__*/React.createElement("h1", {
+    className: "page-head"
+  }, "Films"), /*#__PURE__*/React.createElement("div", {
+    className: "top-tabs",
+    role: "tablist",
+    "aria-label": "Films view"
+  }, /*#__PURE__*/React.createElement("button", {
+    role: "tab",
+    "aria-selected": tab === "all",
+    className: "top-tab" + (tab === "all" ? " active" : ""),
+    onClick: () => setTab("all")
+  }, "Films"), /*#__PURE__*/React.createElement("button", {
+    role: "tab",
+    "aria-selected": tab === "top5",
+    className: "top-tab" + (tab === "top5" ? " active" : ""),
+    onClick: () => setTab("top5")
+  }, "Top 5"))), tab === "top5" ? /*#__PURE__*/React.createElement(Top5Strip, {
+    top5: top5,
+    entries: entries,
+    onChange: onChangeTop5,
+    onOpenMovie: openDetail
+  }) : /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    className: "controls-collapsed"
+  }, /*#__PURE__*/React.createElement("select", {
+    className: "pill-select",
+    value: sort,
+    onChange: e => setSort(e.target.value),
+    "aria-label": "Sort by"
+  }, /*#__PURE__*/React.createElement("option", {
+    value: "watched-desc"
+  }, "Newest"), /*#__PURE__*/React.createElement("option", {
+    value: "watched-asc"
+  }, "Oldest"), /*#__PURE__*/React.createElement("option", {
+    value: "rating-desc"
+  }, "Highest rated"), /*#__PURE__*/React.createElement("option", {
+    value: "rating-asc"
+  }, "Lowest rated"), /*#__PURE__*/React.createElement("option", {
+    value: "title"
+  }, "Title A–Z"), /*#__PURE__*/React.createElement("option", {
+    value: "year-desc"
+  }, "Release year: newest"), /*#__PURE__*/React.createElement("option", {
+    value: "year-asc"
+  }, "Release year: oldest")), /*#__PURE__*/React.createElement("select", {
+    className: "pill-select",
+    value: minRating,
+    onChange: e => setMinRating(Number(e.target.value)),
+    "aria-label": "Minimum rating"
+  }, /*#__PURE__*/React.createElement("option", {
+    value: 0
+  }, "Any rating"), [1, 2, 3, 3.5, 4, 4.5, 5].map(r => /*#__PURE__*/React.createElement("option", {
+    key: r,
+    value: r
+  }, r, "+ rating"))), searchOpen ? /*#__PURE__*/React.createElement("div", {
+    className: "search-expand"
+  }, /*#__PURE__*/React.createElement("input", {
+    ref: searchRef,
+    type: "search",
+    placeholder: "Search your films…",
+    value: query,
+    onChange: e => setQuery(e.target.value),
+    onBlur: () => {
+      if (!query) setSearchOpen(false);
+    }
+  }), /*#__PURE__*/React.createElement("button", {
+    className: "icon-btn",
+    onClick: closeSearch,
+    "aria-label": "Close search"
+  }, "✕")) : /*#__PURE__*/React.createElement("button", {
+    className: "icon-btn",
+    onClick: () => setSearchOpen(true),
+    "aria-label": "Search your films"
+  }, /*#__PURE__*/React.createElement(IconSearch, null)), /*#__PURE__*/React.createElement("span", {
+    className: "count"
+  }, shown.length, " of ", entryList.length)), /*#__PURE__*/React.createElement("div", {
+    className: "grid"
+  }, shown.map(e => /*#__PURE__*/React.createElement(FilmCard, {
+    key: e.id,
+    entry: e,
+    onOpen: () => openDetail(e.id)
+  }))), shown.length === 0 && /*#__PURE__*/React.createElement("p", {
+    className: "quiet-note"
+  }, "No films match those filters.")));
 }
 
 /* ---------------- friends activity feed ---------------- */
 
-function FeedPage({ client, currentUserId }) {
+function FeedPage({
+  client,
+  currentUserId,
+  onOpenProfile
+}) {
+  const [mode, setMode] = useState("activity");
   const [items, setItems] = useState([]);
+  const [news, setNews] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-
-  const loadFeed = useCallback(async () => {
+  const loadActivity = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const { data, error: feedError } = await client.
-    from("diary_entries").
-    select(`
+    const {
+      data,
+      error: feedError
+    } = await client.from("diary_entries").select(`
             *,
             profiles!diary_entries_user_id_fkey (
               username,
               display_name,
               avatar_url
             )
-          `).
-    order("logged_at", { ascending: false }).
-    limit(60);
-    if (feedError) setError(feedError.message);else
-    setItems(data || []);
+          `).order("logged_at", {
+      ascending: false
+    }).limit(60);
+    if (feedError) setError(feedError.message);else setItems(data || []);
     setLoading(false);
   }, [client]);
-
-  useEffect(() => {loadFeed();}, [loadFeed]);
-
-  return (/*#__PURE__*/
-    React.createElement("section", null, /*#__PURE__*/
-    React.createElement("div", { className: "feed-head" }, /*#__PURE__*/
-    React.createElement("div", null, /*#__PURE__*/
-    React.createElement("div", { className: "eyebrow" }, "Friends activity"), /*#__PURE__*/
-    React.createElement("h1", { className: "page-head" }, "Feed")
-    ), /*#__PURE__*/
-    React.createElement("button", { className: "btn-ghost", onClick: loadFeed, disabled: loading },
-    loading ? "Refreshing…" : "Refresh"
-    )
-    ),
-
-    error && /*#__PURE__*/React.createElement("div", { className: "notice error" }, "Couldn't load the feed: ", error),
-    !loading && !error && items.length === 0 && /*#__PURE__*/
-    React.createElement("div", { className: "empty-house feed-empty" }, /*#__PURE__*/
-    React.createElement("div", { className: "empty-mark" }, "01"), /*#__PURE__*/
-    React.createElement("h2", null, "The feed is quiet"), /*#__PURE__*/
-    React.createElement("p", null, "Activity will appear here when you or a friend logs a film.")
-    ), /*#__PURE__*/
-
-
-    React.createElement("div", { className: "feed-list" },
-    items.map((item) => {
-      const person = item.profiles || {};
-      const poster = item.chosen_poster || item.poster_path;
-      return (/*#__PURE__*/
-        React.createElement("article", { className: "feed-entry", key: item.id }, /*#__PURE__*/
-        React.createElement("div", { className: "feed-person" }, /*#__PURE__*/
-        React.createElement("div", { className: "avatar" + (person.avatar_url ? " has-image" : ""), "aria-hidden": "true" },
-        person.avatar_url ? /*#__PURE__*/
-        React.createElement("img", { src: person.avatar_url, alt: "", loading: "lazy" }) :
-        (person.display_name || person.username || "?").slice(0, 1).toUpperCase()
-        ), /*#__PURE__*/
-        React.createElement("div", null, /*#__PURE__*/
-        React.createElement("div", { className: "feed-name" },
-        person.display_name || person.username || "Marquee user",
-        item.user_id === currentUserId && /*#__PURE__*/React.createElement("span", { className: "you-tag" }, "You")
-        ), /*#__PURE__*/
-        React.createElement("div", { className: "feed-action" }, "logged a film \xB7 ", fmtDate(item.watched_date))
-        )
-        ), /*#__PURE__*/
-        React.createElement("div", { className: "feed-content" }, /*#__PURE__*/
-        React.createElement("div", { className: "feed-poster" },
-        poster ? /*#__PURE__*/React.createElement("img", { src: IMG + "w185" + poster, alt: "", loading: "lazy" }) : /*#__PURE__*/React.createElement("div", { className: "poster-blank" })
-        ), /*#__PURE__*/
-        React.createElement("div", { className: "feed-copy" }, /*#__PURE__*/
-        React.createElement("h2", null, item.title, " ", /*#__PURE__*/React.createElement("span", null, item.release_date ? item.release_date.slice(0, 4) : "")), /*#__PURE__*/
-        React.createElement(StarDisplay, { value: Number(item.rating), size: 15 }),
-        item.review ? /*#__PURE__*/React.createElement("p", null, item.review) : /*#__PURE__*/React.createElement("p", { className: "quiet-note" }, "No written review.")
-        )
-        )
-        ));
-
-    })
-    )
-    ));
-
+  const loadNews = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    const {
+      data,
+      error: newsError
+    } = await client.functions.invoke("film-news", {
+      body: {}
+    });
+    if (newsError) setError("Film news isn't connected yet. Deploy the film-news function to turn this feed on.");else setNews(data && data.articles || []);
+    setLoading(false);
+  }, [client]);
+  useEffect(() => {
+    mode === "activity" ? loadActivity() : loadNews();
+  }, [mode, loadActivity, loadNews]);
+  const refresh = mode === "activity" ? loadActivity : loadNews;
+  return /*#__PURE__*/React.createElement("section", null, /*#__PURE__*/React.createElement("div", {
+    className: "feed-head feed-head-switchable"
+  }, /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    className: "eyebrow"
+  }, mode === "activity" ? "Friends activity" : "From around the film world"), /*#__PURE__*/React.createElement("h1", {
+    className: "page-head"
+  }, "Feed")), /*#__PURE__*/React.createElement("button", {
+    className: "btn-ghost",
+    onClick: refresh,
+    disabled: loading
+  }, loading ? "Refreshing…" : "Refresh")), /*#__PURE__*/React.createElement("div", {
+    className: "feed-switch",
+    role: "tablist",
+    "aria-label": "Feed view"
+  }, /*#__PURE__*/React.createElement("button", {
+    role: "tab",
+    "aria-selected": mode === "activity",
+    className: mode === "activity" ? "active" : "",
+    onClick: () => setMode("activity")
+  }, "Activity"), /*#__PURE__*/React.createElement("button", {
+    role: "tab",
+    "aria-selected": mode === "news",
+    className: mode === "news" ? "active" : "",
+    onClick: () => setMode("news")
+  }, "News")), error && /*#__PURE__*/React.createElement("div", {
+    className: "notice error"
+  }, error), !loading && !error && mode === "activity" && items.length === 0 && /*#__PURE__*/React.createElement("div", {
+    className: "empty-house feed-empty"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "empty-mark"
+  }, "01"), /*#__PURE__*/React.createElement("h2", null, "The feed is quiet"), /*#__PURE__*/React.createElement("p", null, "Activity will appear here when you or a friend logs a film.")), mode === "activity" ? /*#__PURE__*/React.createElement("div", {
+    className: "feed-list"
+  }, items.map(item => {
+    const person = item.profiles || {};
+    const poster = item.chosen_poster || item.poster_path;
+    return /*#__PURE__*/React.createElement("article", {
+      className: "feed-entry",
+      key: item.id
+    }, /*#__PURE__*/React.createElement("button", {
+      className: "feed-person",
+      onClick: () => onOpenProfile(item.user_id)
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "avatar" + (person.avatar_url ? " has-image" : ""),
+      "aria-hidden": "true"
+    }, person.avatar_url ? /*#__PURE__*/React.createElement("img", {
+      src: person.avatar_url,
+      alt: "",
+      loading: "lazy"
+    }) : (person.display_name || person.username || "?").slice(0, 1).toUpperCase()), /*#__PURE__*/React.createElement("span", null, /*#__PURE__*/React.createElement("span", {
+      className: "feed-name"
+    }, person.display_name || person.username || "Marquee user", item.user_id === currentUserId && /*#__PURE__*/React.createElement("span", {
+      className: "you-tag"
+    }, "You")), /*#__PURE__*/React.createElement("span", {
+      className: "feed-action"
+    }, "logged a film · ", fmtDate(item.watched_date)))), /*#__PURE__*/React.createElement("div", {
+      className: "feed-content"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "feed-poster"
+    }, poster ? /*#__PURE__*/React.createElement("img", {
+      src: IMG + "w185" + poster,
+      alt: "",
+      loading: "lazy"
+    }) : /*#__PURE__*/React.createElement("div", {
+      className: "poster-blank"
+    })), /*#__PURE__*/React.createElement("div", {
+      className: "feed-copy"
+    }, /*#__PURE__*/React.createElement("h2", null, item.title, " ", /*#__PURE__*/React.createElement("span", null, item.release_date ? item.release_date.slice(0, 4) : "")), /*#__PURE__*/React.createElement(StarDisplay, {
+      value: Number(item.rating),
+      size: 15
+    }), item.review ? /*#__PURE__*/React.createElement("p", null, item.review) : /*#__PURE__*/React.createElement("p", {
+      className: "quiet-note"
+    }, "No written review."))));
+  })) : /*#__PURE__*/React.createElement("div", {
+    className: "news-grid"
+  }, news.map(article => /*#__PURE__*/React.createElement("a", {
+    className: "news-card",
+    key: article.url,
+    href: article.url,
+    target: "_blank",
+    rel: "noreferrer"
+  }, article.image ? /*#__PURE__*/React.createElement("img", {
+    src: article.image,
+    alt: "",
+    loading: "lazy"
+  }) : /*#__PURE__*/React.createElement("div", {
+    className: "news-card-placeholder"
+  }, "MARQUEE"), /*#__PURE__*/React.createElement("div", {
+    className: "news-card-copy"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "news-source"
+  }, article.source, " · ", article.publishedAt ? new Date(article.publishedAt).toLocaleDateString(undefined, {
+    month: "short",
+    day: "numeric"
+  }) : "Latest"), /*#__PURE__*/React.createElement("h2", null, article.title), article.description && /*#__PURE__*/React.createElement("p", null, article.description), /*#__PURE__*/React.createElement("span", null, "Read at ", article.source, " ↗")))), !loading && !error && news.length === 0 && /*#__PURE__*/React.createElement("p", {
+    className: "quiet-note"
+  }, "No headlines are available right now.")));
+}
+function MemberProfilePage({
+  client,
+  userId,
+  onBack
+}) {
+  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  useEffect(() => {
+    let active = true;
+    setLoading(true);
+    client.rpc("get_member_profile", {
+      p_user_id: userId
+    }).then(({
+      data,
+      error
+    }) => {
+      if (!active) return;
+      if (error) setError(error.message);else setData(data);
+      setLoading(false);
+    });
+    return () => {
+      active = false;
+    };
+  }, [client, userId]);
+  if (loading) return /*#__PURE__*/React.createElement("div", {
+    className: "app-loader inline-loader"
+  }, /*#__PURE__*/React.createElement("span", null, "opening profile"));
+  if (error || !data || !data.profile) {
+    return /*#__PURE__*/React.createElement("section", null, /*#__PURE__*/React.createElement("button", {
+      className: "btn-ghost back",
+      onClick: onBack
+    }, "← Feed"), /*#__PURE__*/React.createElement("div", {
+      className: "notice error"
+    }, "This profile couldn't be opened. ", error || "Try again later."));
+  }
+  const profile = data.profile;
+  const entryMap = {};
+  (data.entries || []).forEach(row => {
+    const entry = rowToEntry(row);
+    entryMap[entry.id] = entry;
+  });
+  const entries = Object.values(entryMap);
+  const top5 = Array.isArray(data.top5) ? data.top5 : [];
+  const cache = data.movie_cache || {};
+  const average = entries.length ? entries.reduce((sum, entry) => sum + entry.rating, 0) / entries.length : 0;
+  const fiveStars = entries.filter(entry => entry.rating === 5).length;
+  const genres = {};
+  entries.forEach(entry => (entry.genres || []).forEach(genre => {
+    genres[genre] = (genres[genre] || 0) + 1;
+  }));
+  const topGenre = Object.entries(genres).sort((a, b) => b[1] - a[1])[0];
+  return /*#__PURE__*/React.createElement("section", {
+    className: "member-profile"
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "btn-ghost back",
+    onClick: onBack
+  }, "← Feed"), /*#__PURE__*/React.createElement("div", {
+    className: "member-hero"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "avatar member-avatar" + (profile.avatar_url ? " has-image" : "")
+  }, profile.avatar_url ? /*#__PURE__*/React.createElement("img", {
+    src: profile.avatar_url,
+    alt: `${profile.display_name || profile.username}'s profile`
+  }) : (profile.display_name || profile.username || "?").slice(0, 1).toUpperCase()), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+    className: "eyebrow"
+  }, "Member profile"), /*#__PURE__*/React.createElement("h1", {
+    className: "page-head"
+  }, profile.display_name || profile.username), /*#__PURE__*/React.createElement("div", {
+    className: "member-handle"
+  }, "@", profile.username), profile.bio && /*#__PURE__*/React.createElement("p", {
+    className: "member-bio"
+  }, profile.bio))), /*#__PURE__*/React.createElement("h2", {
+    className: "section-head profile-section-head"
+  }, "Top 5"), /*#__PURE__*/React.createElement("ol", {
+    className: "marquee-board member-top5"
+  }, [0, 1, 2, 3, 4].map(index => {
+    const id = top5[index] ? String(top5[index]) : null;
+    const movie = id ? resolveMovie(id, entryMap, cache) : null;
+    const poster = movie ? movie.chosenPoster || movie.posterPath : null;
+    return /*#__PURE__*/React.createElement("li", {
+      className: "marquee-slot" + (movie ? " filled" : ""),
+      key: index
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "marquee-rank"
+    }, String(index + 1).padStart(2, "0")), movie ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+      className: "marquee-poster"
+    }, poster ? /*#__PURE__*/React.createElement("img", {
+      src: IMG + "w342" + poster,
+      alt: "",
+      loading: "lazy"
+    }) : /*#__PURE__*/React.createElement("div", {
+      className: "poster-blank"
+    })), /*#__PURE__*/React.createElement("div", {
+      className: "marquee-title"
+    }, movie.title)) : /*#__PURE__*/React.createElement("div", {
+      className: "marquee-empty member-empty"
+    }, /*#__PURE__*/React.createElement("span", null, "Not ranked")));
+  })), /*#__PURE__*/React.createElement("h2", {
+    className: "section-head profile-section-head"
+  }, "Stats"), /*#__PURE__*/React.createElement("div", {
+    className: "stat-cards member-stats"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "stat-card"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "stat-num"
+  }, entries.length), /*#__PURE__*/React.createElement("div", {
+    className: "stat-label"
+  }, "films logged")), /*#__PURE__*/React.createElement("div", {
+    className: "stat-card"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "stat-num"
+  }, entries.length ? average.toFixed(2) : "—"), /*#__PURE__*/React.createElement("div", {
+    className: "stat-label"
+  }, "average rating")), /*#__PURE__*/React.createElement("div", {
+    className: "stat-card"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "stat-num"
+  }, fiveStars), /*#__PURE__*/React.createElement("div", {
+    className: "stat-label"
+  }, "five-star films")), /*#__PURE__*/React.createElement("div", {
+    className: "stat-card"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "stat-num small"
+  }, topGenre ? topGenre[0] : "—"), /*#__PURE__*/React.createElement("div", {
+    className: "stat-label"
+  }, "most-watched genre"))), /*#__PURE__*/React.createElement("h2", {
+    className: "section-head profile-section-head"
+  }, "Recent films"), /*#__PURE__*/React.createElement("div", {
+    className: "profile-recent-grid"
+  }, entries.slice(0, 6).map(entry => {
+    const poster = entry.chosenPoster || entry.posterPath;
+    return /*#__PURE__*/React.createElement("div", {
+      className: "profile-recent-film",
+      key: entry.id
+    }, poster ? /*#__PURE__*/React.createElement("img", {
+      src: IMG + "w342" + poster,
+      alt: "",
+      loading: "lazy"
+    }) : /*#__PURE__*/React.createElement("div", {
+      className: "poster-blank"
+    }), /*#__PURE__*/React.createElement("strong", null, entry.title), /*#__PURE__*/React.createElement(StarDisplay, {
+      value: entry.rating,
+      size: 12
+    }));
+  })));
 }
 
 /* ---------------- log modal (search + form) ---------------- */
 
-function LogModal({ tmdb, existing, onClose, onSave }) {
+function LogModal({
+  tmdb,
+  existing,
+  onClose,
+  onSave
+}) {
   const [query, setQuery] = useState("");
   const [results, setResults] = useState([]);
   const [searching, setSearching] = useState(false);
@@ -1283,17 +1891,14 @@ function LogModal({ tmdb, existing, onClose, onSave }) {
   const [review, setReview] = useState("");
   const inputRef = useRef(null);
   const timer = useRef(null);
-
   useEffect(() => {
     inputRef.current && inputRef.current.focus();
   }, []);
-
   useEffect(() => {
-    const onKey = (e) => e.key === "Escape" && onClose();
+    const onKey = e => e.key === "Escape" && onClose();
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
-
   useEffect(() => {
     window.clearTimeout(timer.current);
     if (!query.trim()) {
@@ -1305,7 +1910,10 @@ function LogModal({ tmdb, existing, onClose, onSave }) {
       setSearching(true);
       setError(null);
       try {
-        const data = await tmdb("/search/movie", { query: query.trim(), include_adult: "false" });
+        const data = await tmdb("/search/movie", {
+          query: query.trim(),
+          include_adult: "false"
+        });
         setResults((data.results || []).slice(0, 12));
       } catch (err) {
         setError(friendlyError(err));
@@ -1316,7 +1924,6 @@ function LogModal({ tmdb, existing, onClose, onSave }) {
     }, 400);
     return () => window.clearTimeout(timer.current);
   }, [query, tmdb]);
-
   const loadPosters = async () => {
     setLoadingPosters(true);
     setPostersError(null);
@@ -1330,18 +1937,17 @@ function LogModal({ tmdb, existing, onClose, onSave }) {
       setLoadingPosters(false);
     }
   };
-
   const save = async () => {
     if (!picked || !rating) return;
     let genres = [];
     let runtime = null;
     try {
       const detail = await tmdb("/movie/" + picked.id, {});
-      genres = (detail.genres || []).map((g) => g.name);
+      genres = (detail.genres || []).map(g => g.name);
       runtime = detail.runtime || null;
     } catch (e) {
-
-      /* not critical — log without genre data */}
+      /* not critical — log without genre data */
+    }
     onSave({
       id: String(picked.id),
       title: picked.title,
@@ -1356,142 +1962,153 @@ function LogModal({ tmdb, existing, onClose, onSave }) {
       loggedAt: Date.now()
     });
   };
-
-  return (/*#__PURE__*/
-    React.createElement("div", { className: "overlay", onMouseDown: (e) => e.target === e.currentTarget && onClose() }, /*#__PURE__*/
-    React.createElement("div", { className: "modal", role: "dialog", "aria-modal": "true", "aria-label": "Log a movie" }, /*#__PURE__*/
-    React.createElement("div", { className: "modal-head" }, /*#__PURE__*/
-    React.createElement("h2", null, picked ? "Movie details" : "Log a movie"), /*#__PURE__*/
-    React.createElement("button", { className: "btn-ghost", onClick: onClose, "aria-label": "Close" }, "\u2715")
-    ),
-
-    !picked && /*#__PURE__*/
-    React.createElement(React.Fragment, null, /*#__PURE__*/
-    React.createElement("input", {
-      ref: inputRef,
-      className: "search-big",
-      type: "search",
-      placeholder: "Search TMDB by title\u2026",
-      value: query,
-      onChange: (e) => setQuery(e.target.value) }
-    ),
-    error && /*#__PURE__*/React.createElement("div", { className: "notice error" }, error),
-    searching && /*#__PURE__*/React.createElement("div", { className: "quiet-note" }, "Searching\u2026"), /*#__PURE__*/
-    React.createElement("ul", { className: "results" },
-    results.map((m) => /*#__PURE__*/
-    React.createElement("li", { key: m.id }, /*#__PURE__*/
-    React.createElement("button", {
-      className: "result",
-      onClick: () => {
-        setPicked(m);
-        setSelectedPoster(null);
-        setPosters(null);
-        setPostersError(null);
-      } },
-
-    m.poster_path ? /*#__PURE__*/
-    React.createElement("img", { src: IMG + "w92" + m.poster_path, alt: "", loading: "lazy" }) : /*#__PURE__*/
-
-    React.createElement("div", { className: "thumb-blank", "aria-hidden": "true" }), /*#__PURE__*/
-
-    React.createElement("span", { className: "result-title" }, m.title), /*#__PURE__*/
-    React.createElement("span", { className: "result-year" }, m.release_date ? m.release_date.slice(0, 4) : ""),
-    existing[String(m.id)] && /*#__PURE__*/React.createElement("span", { className: "result-flag" }, "already logged")
-    )
-    )
-    )
-    ),
-    !searching && query && results.length === 0 && !error && /*#__PURE__*/
-    React.createElement("p", { className: "quiet-note" }, "No matches. Check the spelling or try a shorter title.")
-
-    ),
-
-
-    picked && /*#__PURE__*/
-    React.createElement(React.Fragment, null, /*#__PURE__*/
-    React.createElement("div", { className: "log-form" }, /*#__PURE__*/
-    React.createElement("div", { className: "log-form-poster" },
-    selectedPoster || picked.poster_path ? /*#__PURE__*/
-    React.createElement("img", { src: IMG + "w342" + (selectedPoster || picked.poster_path), alt: picked.title + " poster" }) : /*#__PURE__*/
-
-    React.createElement("div", { className: "poster-blank" }, /*#__PURE__*/React.createElement("span", null, picked.title)),
-
-    posters === null && !loadingPosters && !postersError && /*#__PURE__*/
-    React.createElement("button", { className: "btn-ghost poster-change-btn", onClick: loadPosters }, "Change poster"),
-
-    loadingPosters && /*#__PURE__*/React.createElement("p", { className: "quiet-note" }, "Loading posters\u2026"),
-    postersError && /*#__PURE__*/
-    React.createElement("div", { className: "notice error" },
-    postersError, " ", /*#__PURE__*/React.createElement("button", { className: "link", onClick: loadPosters }, "Retry")
-    )
-
-    ), /*#__PURE__*/
-    React.createElement("div", { className: "log-form-fields" }, /*#__PURE__*/
-    React.createElement("h3", { className: "film-title" }, picked.title, /*#__PURE__*/
-    React.createElement("span", { className: "film-year" }, " ", picked.release_date ? picked.release_date.slice(0, 4) : "")
-    ), /*#__PURE__*/
-    React.createElement(FilmFacts, { tmdb: tmdb, movieId: picked.id, overview: picked.overview }), /*#__PURE__*/
-    React.createElement("label", { className: "field" }, /*#__PURE__*/
-    React.createElement("span", null, "Watched on"), /*#__PURE__*/
-    React.createElement("input", { type: "date", value: watchedDate, max: todayISO(), onChange: (e) => setWatchedDate(e.target.value) })
-    ), /*#__PURE__*/
-    React.createElement("div", { className: "field" }, /*#__PURE__*/
-    React.createElement("span", null, "Your rating"), /*#__PURE__*/
-    React.createElement(StarInput, { value: rating, onChange: setRating })
-    ), /*#__PURE__*/
-    React.createElement("label", { className: "field" }, /*#__PURE__*/
-    React.createElement("span", null, "Review ", /*#__PURE__*/React.createElement("em", null, "(optional)")), /*#__PURE__*/
-    React.createElement("textarea", {
-      rows: 5,
-      placeholder: "What stuck with you?",
-      value: review,
-      onChange: (e) => setReview(e.target.value) }
-    )
-    ), /*#__PURE__*/
-    React.createElement("div", { className: "row-end" }, /*#__PURE__*/
-    React.createElement("button", { className: "btn-ghost", onClick: () => setPicked(null) }, "\u2190 Back to search"), /*#__PURE__*/
-    React.createElement("button", { className: "btn-log", disabled: !rating, onClick: save },
-    rating ? "Add to films" : "Pick a rating first"
-    )
-    )
-    )
-    ),
-
-    posters && posters.length > 0 && /*#__PURE__*/
-    React.createElement("div", { className: "poster-picker" }, /*#__PURE__*/
-    React.createElement("p", { className: "quiet-note" }, posters.length, " posters \xB7 click one to use it"), /*#__PURE__*/
-    React.createElement("div", { className: "poster-grid" },
-    posters.map((p) => {
-      const active = (selectedPoster || picked.poster_path) === p.file_path;
-      return (/*#__PURE__*/
-        React.createElement("button", {
-          key: p.file_path,
-          className: "poster-option" + (active ? " active" : ""),
-          onClick: () => setSelectedPoster(p.file_path),
-          "aria-label": `Use ${p.iso_639_1 ? p.iso_639_1.toUpperCase() : "textless"} poster`,
-          "aria-pressed": active }, /*#__PURE__*/
-
-        React.createElement("img", { src: IMG + "w185" + p.file_path, alt: "", loading: "lazy" }), /*#__PURE__*/
-        React.createElement("span", { className: "poster-lang" }, p.iso_639_1 ? p.iso_639_1.toUpperCase() : "—")
-        ));
-
-    })
-    )
-    ),
-
-    posters && posters.length === 0 && /*#__PURE__*/
-    React.createElement("p", { className: "quiet-note" }, "TMDB has no alternate posters for this one.")
-
-    )
-
-    )
-    ));
-
+  return /*#__PURE__*/React.createElement("div", {
+    className: "overlay",
+    onMouseDown: e => e.target === e.currentTarget && onClose()
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "modal",
+    role: "dialog",
+    "aria-modal": "true",
+    "aria-label": "Log a movie"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "modal-head"
+  }, /*#__PURE__*/React.createElement("h2", null, picked ? "Movie details" : "Log a movie"), /*#__PURE__*/React.createElement("button", {
+    className: "btn-ghost",
+    onClick: onClose,
+    "aria-label": "Close"
+  }, "✕")), !picked && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("input", {
+    ref: inputRef,
+    className: "search-big",
+    type: "search",
+    placeholder: "Search TMDB by title…",
+    value: query,
+    onChange: e => setQuery(e.target.value)
+  }), error && /*#__PURE__*/React.createElement("div", {
+    className: "notice error"
+  }, error), searching && /*#__PURE__*/React.createElement("div", {
+    className: "quiet-note"
+  }, "Searching…"), /*#__PURE__*/React.createElement("ul", {
+    className: "results"
+  }, results.map(m => /*#__PURE__*/React.createElement("li", {
+    key: m.id
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "result",
+    onClick: () => {
+      setPicked(m);
+      setSelectedPoster(null);
+      setPosters(null);
+      setPostersError(null);
+    }
+  }, m.poster_path ? /*#__PURE__*/React.createElement("img", {
+    src: IMG + "w92" + m.poster_path,
+    alt: "",
+    loading: "lazy"
+  }) : /*#__PURE__*/React.createElement("div", {
+    className: "thumb-blank",
+    "aria-hidden": "true"
+  }), /*#__PURE__*/React.createElement("span", {
+    className: "result-title"
+  }, m.title), /*#__PURE__*/React.createElement("span", {
+    className: "result-year"
+  }, m.release_date ? m.release_date.slice(0, 4) : ""), existing[String(m.id)] && /*#__PURE__*/React.createElement("span", {
+    className: "result-flag"
+  }, "already logged"))))), !searching && query && results.length === 0 && !error && /*#__PURE__*/React.createElement("p", {
+    className: "quiet-note"
+  }, "No matches. Check the spelling or try a shorter title.")), picked && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    className: "log-form"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "log-form-poster"
+  }, selectedPoster || picked.poster_path ? /*#__PURE__*/React.createElement("img", {
+    src: IMG + "w342" + (selectedPoster || picked.poster_path),
+    alt: picked.title + " poster"
+  }) : /*#__PURE__*/React.createElement("div", {
+    className: "poster-blank"
+  }, /*#__PURE__*/React.createElement("span", null, picked.title)), posters === null && !loadingPosters && !postersError && /*#__PURE__*/React.createElement("button", {
+    className: "btn-ghost poster-change-btn",
+    onClick: loadPosters
+  }, "Change poster"), loadingPosters && /*#__PURE__*/React.createElement("p", {
+    className: "quiet-note"
+  }, "Loading posters…"), postersError && /*#__PURE__*/React.createElement("div", {
+    className: "notice error"
+  }, postersError, " ", /*#__PURE__*/React.createElement("button", {
+    className: "link",
+    onClick: loadPosters
+  }, "Retry"))), /*#__PURE__*/React.createElement("div", {
+    className: "log-form-fields"
+  }, /*#__PURE__*/React.createElement("h3", {
+    className: "film-title"
+  }, picked.title, /*#__PURE__*/React.createElement("span", {
+    className: "film-year"
+  }, " ", picked.release_date ? picked.release_date.slice(0, 4) : "")), /*#__PURE__*/React.createElement(FilmFacts, {
+    tmdb: tmdb,
+    movieId: picked.id,
+    overview: picked.overview
+  }), /*#__PURE__*/React.createElement("label", {
+    className: "field"
+  }, /*#__PURE__*/React.createElement("span", null, "Watched on"), /*#__PURE__*/React.createElement("input", {
+    type: "date",
+    value: watchedDate,
+    max: todayISO(),
+    onChange: e => setWatchedDate(e.target.value)
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "field"
+  }, /*#__PURE__*/React.createElement("span", null, "Your rating"), /*#__PURE__*/React.createElement(StarInput, {
+    value: rating,
+    onChange: setRating
+  })), /*#__PURE__*/React.createElement("label", {
+    className: "field"
+  }, /*#__PURE__*/React.createElement("span", null, "Review ", /*#__PURE__*/React.createElement("em", null, "(optional)")), /*#__PURE__*/React.createElement("textarea", {
+    rows: 5,
+    placeholder: "What stuck with you?",
+    value: review,
+    onChange: e => setReview(e.target.value)
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "row-end"
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "btn-ghost",
+    onClick: () => setPicked(null)
+  }, "← Back to search"), /*#__PURE__*/React.createElement("button", {
+    className: "btn-log",
+    disabled: !rating,
+    onClick: save
+  }, rating ? "Add to films" : "Pick a rating first")))), posters && posters.length > 0 && /*#__PURE__*/React.createElement("div", {
+    className: "poster-picker"
+  }, /*#__PURE__*/React.createElement("p", {
+    className: "quiet-note"
+  }, posters.length, " posters · click one to use it"), /*#__PURE__*/React.createElement("div", {
+    className: "poster-grid"
+  }, posters.map(p => {
+    const active = (selectedPoster || picked.poster_path) === p.file_path;
+    return /*#__PURE__*/React.createElement("button", {
+      key: p.file_path,
+      className: "poster-option" + (active ? " active" : ""),
+      onClick: () => setSelectedPoster(p.file_path),
+      "aria-label": `Use ${p.iso_639_1 ? p.iso_639_1.toUpperCase() : "textless"} poster`,
+      "aria-pressed": active
+    }, /*#__PURE__*/React.createElement("img", {
+      src: IMG + "w185" + p.file_path,
+      alt: "",
+      loading: "lazy"
+    }), /*#__PURE__*/React.createElement("span", {
+      className: "poster-lang"
+    }, p.iso_639_1 ? p.iso_639_1.toUpperCase() : "—"));
+  }))), posters && posters.length === 0 && /*#__PURE__*/React.createElement("p", {
+    className: "quiet-note"
+  }, "TMDB has no alternate posters for this one."))));
 }
 
 /* ---------------- detail page ---------------- */
 
-function DetailPage({ entry, tmdb, lists, onBack, onUpdate, onDelete, onAddToList, notify }) {
+function DetailPage({
+  entry,
+  tmdb,
+  lists,
+  onBack,
+  onUpdate,
+  onDelete,
+  onAddToList,
+  notify
+}) {
   const [editingReview, setEditingReview] = useState(false);
   const [reviewDraft, setReviewDraft] = useState(entry.review);
   const [posters, setPosters] = useState(null); // null = not loaded
@@ -1499,9 +2116,7 @@ function DetailPage({ entry, tmdb, lists, onBack, onUpdate, onDelete, onAddToLis
   const [loadingPosters, setLoadingPosters] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [listPick, setListPick] = useState("");
-
   const poster = entry.chosenPoster || entry.posterPath;
-
   const loadPosters = async () => {
     setLoadingPosters(true);
     setPostersError(null);
@@ -1515,201 +2130,273 @@ function DetailPage({ entry, tmdb, lists, onBack, onUpdate, onDelete, onAddToLis
       setLoadingPosters(false);
     }
   };
-
-  return (/*#__PURE__*/
-    React.createElement("section", { className: "detail" }, /*#__PURE__*/
-    React.createElement("button", { className: "btn-ghost back", onClick: onBack }, "\u2190 Films"), /*#__PURE__*/
-
-    React.createElement("div", { className: "detail-main" }, /*#__PURE__*/
-    React.createElement("div", { className: "detail-poster" },
-    poster ? /*#__PURE__*/
-    React.createElement("img", { src: IMG + "w500" + poster, alt: entry.title + " poster" }) : /*#__PURE__*/
-
-    React.createElement("div", { className: "poster-blank tall" }, /*#__PURE__*/React.createElement("span", null, entry.title))
-
-    ), /*#__PURE__*/
-
-    React.createElement("div", { className: "detail-info" }, /*#__PURE__*/
-    React.createElement("h1", { className: "film-title big" }, entry.title, /*#__PURE__*/
-    React.createElement("span", { className: "film-year" }, " ", yearOf(entry))
-    ), /*#__PURE__*/
-    React.createElement("div", { className: "detail-facts" },
-    entry.genres && entry.genres.length > 0 && /*#__PURE__*/React.createElement("span", null, entry.genres.join(" · ")),
-    entry.runtime && /*#__PURE__*/React.createElement("span", null, entry.runtime, " min")
-    ), /*#__PURE__*/
-    React.createElement(FilmFacts, { tmdb: tmdb, movieId: entry.id }), /*#__PURE__*/
-
-    React.createElement("div", { className: "field" }, /*#__PURE__*/
-    React.createElement("span", null, "Your rating"), /*#__PURE__*/
-    React.createElement(StarInput, { value: entry.rating, onChange: (r) => onUpdate({ rating: r }) })
-    ), /*#__PURE__*/
-
-    React.createElement("label", { className: "field" }, /*#__PURE__*/
-    React.createElement("span", null, "Watched on"), /*#__PURE__*/
-    React.createElement("input", {
-      type: "date",
-      value: entry.watchedDate,
-      max: todayISO(),
-      onChange: (e) => onUpdate({ watchedDate: e.target.value }) }
-    )
-    ), /*#__PURE__*/
-
-    React.createElement("div", { className: "field" }, /*#__PURE__*/
-    React.createElement("span", null, "Review"),
-    editingReview ? /*#__PURE__*/
-    React.createElement(React.Fragment, null, /*#__PURE__*/
-    React.createElement("textarea", { rows: 6, value: reviewDraft, onChange: (e) => setReviewDraft(e.target.value) }), /*#__PURE__*/
-    React.createElement("div", { className: "row-end" }, /*#__PURE__*/
-    React.createElement("button", { className: "btn-ghost", onClick: () => {setReviewDraft(entry.review);setEditingReview(false);} }, "Cancel"), /*#__PURE__*/
-    React.createElement("button", { className: "btn-log", onClick: () => {onUpdate({ review: reviewDraft.trim() });setEditingReview(false);} }, "Save review")
-    )
-    ) : /*#__PURE__*/
-
-    React.createElement(React.Fragment, null,
-    entry.review ? /*#__PURE__*/React.createElement("p", { className: "review-text" }, entry.review) : /*#__PURE__*/React.createElement("p", { className: "quiet-note" }, "No review yet."), /*#__PURE__*/
-    React.createElement("button", { className: "btn-ghost", onClick: () => {setReviewDraft(entry.review);setEditingReview(true);} },
-    entry.review ? "Edit review" : "Write a review"
-    )
-    )
-
-    ),
-
-    lists.length > 0 && /*#__PURE__*/
-    React.createElement("div", { className: "field" }, /*#__PURE__*/
-    React.createElement("span", null, "Add to a list"), /*#__PURE__*/
-    React.createElement("div", { className: "row" }, /*#__PURE__*/
-    React.createElement("select", { value: listPick, onChange: (e) => setListPick(e.target.value) }, /*#__PURE__*/
-    React.createElement("option", { value: "" }, "Choose a list\u2026"),
-    lists.map((l) => /*#__PURE__*/
-    React.createElement("option", { key: l.id, value: l.id, disabled: l.movieIds.includes(entry.id) },
-    l.name, l.movieIds.includes(entry.id) ? " (already in)" : ""
-    )
-    )
-    ), /*#__PURE__*/
-    React.createElement("button", { className: "btn-ghost", disabled: !listPick, onClick: () => {onAddToList(listPick);setListPick("");} }, "Add"
-
-    )
-    )
-    ), /*#__PURE__*/
-
-
-    React.createElement("div", { className: "danger-zone" },
-    confirmDelete ? /*#__PURE__*/
-    React.createElement("div", { className: "row" }, /*#__PURE__*/
-    React.createElement("span", { className: "quiet-note" }, "Remove this entry and its review?"), /*#__PURE__*/
-    React.createElement("button", { className: "btn-danger", onClick: onDelete }, "Yes, remove"), /*#__PURE__*/
-    React.createElement("button", { className: "btn-ghost", onClick: () => setConfirmDelete(false) }, "Keep it")
-    ) : /*#__PURE__*/
-
-    React.createElement("button", { className: "btn-ghost danger", onClick: () => setConfirmDelete(true) }, "Remove from films")
-
-    )
-    )
-    ), /*#__PURE__*/
-
-    React.createElement("div", { className: "poster-picker" }, /*#__PURE__*/
-    React.createElement("h2", { className: "section-head" }, "Alternate posters"),
-    posters === null && !loadingPosters && !postersError && /*#__PURE__*/
-    React.createElement("button", { className: "btn-ghost", onClick: loadPosters }, "Change poster"),
-
-    loadingPosters && /*#__PURE__*/React.createElement("p", { className: "quiet-note" }, "Pulling posters\u2026"),
-    postersError && /*#__PURE__*/
-    React.createElement("div", { className: "notice error" },
-    postersError, " ", /*#__PURE__*/React.createElement("button", { className: "link", onClick: loadPosters }, "Retry")
-    ),
-
-    posters && posters.length === 0 && /*#__PURE__*/React.createElement("p", { className: "quiet-note" }, "TMDB has no alternate posters for this one."),
-    posters && posters.length > 0 && /*#__PURE__*/
-    React.createElement(React.Fragment, null, /*#__PURE__*/
-    React.createElement("p", { className: "quiet-note" }, posters.length, " posters \xB7 click one to make it this entry's poster"), /*#__PURE__*/
-    React.createElement("div", { className: "poster-grid" },
-    posters.map((p) => {
-      const active = (entry.chosenPoster || entry.posterPath) === p.file_path;
-      return (/*#__PURE__*/
-        React.createElement("button", {
-          key: p.file_path,
-          className: "poster-option" + (active ? " active" : ""),
-          onClick: () => {onUpdate({ chosenPoster: p.file_path });notify("Poster updated.");},
-          "aria-label": `Use ${p.iso_639_1 ? p.iso_639_1.toUpperCase() : "textless"} poster`,
-          "aria-pressed": active }, /*#__PURE__*/
-
-        React.createElement("img", { src: IMG + "w185" + p.file_path, alt: "", loading: "lazy" }), /*#__PURE__*/
-        React.createElement("span", { className: "poster-lang" }, p.iso_639_1 ? p.iso_639_1.toUpperCase() : "—")
-        ));
-
+  return /*#__PURE__*/React.createElement("section", {
+    className: "detail"
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "btn-ghost back",
+    onClick: onBack
+  }, "← Films"), /*#__PURE__*/React.createElement("div", {
+    className: "detail-main"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "detail-poster"
+  }, poster ? /*#__PURE__*/React.createElement("img", {
+    src: IMG + "w500" + poster,
+    alt: entry.title + " poster"
+  }) : /*#__PURE__*/React.createElement("div", {
+    className: "poster-blank tall"
+  }, /*#__PURE__*/React.createElement("span", null, entry.title))), /*#__PURE__*/React.createElement("div", {
+    className: "detail-info"
+  }, /*#__PURE__*/React.createElement("h1", {
+    className: "film-title big"
+  }, entry.title, /*#__PURE__*/React.createElement("span", {
+    className: "film-year"
+  }, " ", yearOf(entry))), /*#__PURE__*/React.createElement("div", {
+    className: "detail-facts"
+  }, entry.genres && entry.genres.length > 0 && /*#__PURE__*/React.createElement("span", null, entry.genres.join(" · ")), entry.runtime && /*#__PURE__*/React.createElement("span", null, entry.runtime, " min")), /*#__PURE__*/React.createElement(FilmFacts, {
+    tmdb: tmdb,
+    movieId: entry.id
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "field"
+  }, /*#__PURE__*/React.createElement("span", null, "Your rating"), /*#__PURE__*/React.createElement(StarInput, {
+    value: entry.rating,
+    onChange: r => onUpdate({
+      rating: r
     })
-    )
-    )
-
-    )
-    ));
-
+  })), /*#__PURE__*/React.createElement("label", {
+    className: "field"
+  }, /*#__PURE__*/React.createElement("span", null, "Watched on"), /*#__PURE__*/React.createElement("input", {
+    type: "date",
+    value: entry.watchedDate,
+    max: todayISO(),
+    onChange: e => onUpdate({
+      watchedDate: e.target.value
+    })
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "field"
+  }, /*#__PURE__*/React.createElement("span", null, "Review"), editingReview ? /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("textarea", {
+    rows: 6,
+    value: reviewDraft,
+    onChange: e => setReviewDraft(e.target.value)
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "row-end"
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "btn-ghost",
+    onClick: () => {
+      setReviewDraft(entry.review);
+      setEditingReview(false);
+    }
+  }, "Cancel"), /*#__PURE__*/React.createElement("button", {
+    className: "btn-log",
+    onClick: () => {
+      onUpdate({
+        review: reviewDraft.trim()
+      });
+      setEditingReview(false);
+    }
+  }, "Save review"))) : /*#__PURE__*/React.createElement(React.Fragment, null, entry.review ? /*#__PURE__*/React.createElement("p", {
+    className: "review-text"
+  }, entry.review) : /*#__PURE__*/React.createElement("p", {
+    className: "quiet-note"
+  }, "No review yet."), /*#__PURE__*/React.createElement("button", {
+    className: "btn-ghost",
+    onClick: () => {
+      setReviewDraft(entry.review);
+      setEditingReview(true);
+    }
+  }, entry.review ? "Edit review" : "Write a review"))), lists.length > 0 && /*#__PURE__*/React.createElement("div", {
+    className: "field"
+  }, /*#__PURE__*/React.createElement("span", null, "Add to a list"), /*#__PURE__*/React.createElement("div", {
+    className: "row"
+  }, /*#__PURE__*/React.createElement("select", {
+    value: listPick,
+    onChange: e => setListPick(e.target.value)
+  }, /*#__PURE__*/React.createElement("option", {
+    value: ""
+  }, "Choose a list…"), lists.map(l => /*#__PURE__*/React.createElement("option", {
+    key: l.id,
+    value: l.id,
+    disabled: l.movieIds.includes(entry.id)
+  }, l.name, l.movieIds.includes(entry.id) ? " (already in)" : ""))), /*#__PURE__*/React.createElement("button", {
+    className: "btn-ghost",
+    disabled: !listPick,
+    onClick: () => {
+      onAddToList(listPick);
+      setListPick("");
+    }
+  }, "Add"))), /*#__PURE__*/React.createElement("div", {
+    className: "danger-zone"
+  }, confirmDelete ? /*#__PURE__*/React.createElement("div", {
+    className: "row"
+  }, /*#__PURE__*/React.createElement("span", {
+    className: "quiet-note"
+  }, "Remove this entry and its review?"), /*#__PURE__*/React.createElement("button", {
+    className: "btn-danger",
+    onClick: onDelete
+  }, "Yes, remove"), /*#__PURE__*/React.createElement("button", {
+    className: "btn-ghost",
+    onClick: () => setConfirmDelete(false)
+  }, "Keep it")) : /*#__PURE__*/React.createElement("button", {
+    className: "btn-ghost danger",
+    onClick: () => setConfirmDelete(true)
+  }, "Remove from films")))), /*#__PURE__*/React.createElement("div", {
+    className: "poster-picker"
+  }, /*#__PURE__*/React.createElement("h2", {
+    className: "section-head"
+  }, "Alternate posters"), posters === null && !loadingPosters && !postersError && /*#__PURE__*/React.createElement("button", {
+    className: "btn-ghost",
+    onClick: loadPosters
+  }, "Change poster"), loadingPosters && /*#__PURE__*/React.createElement("p", {
+    className: "quiet-note"
+  }, "Pulling posters…"), postersError && /*#__PURE__*/React.createElement("div", {
+    className: "notice error"
+  }, postersError, " ", /*#__PURE__*/React.createElement("button", {
+    className: "link",
+    onClick: loadPosters
+  }, "Retry")), posters && posters.length === 0 && /*#__PURE__*/React.createElement("p", {
+    className: "quiet-note"
+  }, "TMDB has no alternate posters for this one."), posters && posters.length > 0 && /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("p", {
+    className: "quiet-note"
+  }, posters.length, " posters · click one to make it this entry's poster"), /*#__PURE__*/React.createElement("div", {
+    className: "poster-grid"
+  }, posters.map(p => {
+    const active = (entry.chosenPoster || entry.posterPath) === p.file_path;
+    return /*#__PURE__*/React.createElement("button", {
+      key: p.file_path,
+      className: "poster-option" + (active ? " active" : ""),
+      onClick: () => {
+        onUpdate({
+          chosenPoster: p.file_path
+        });
+        notify("Poster updated.");
+      },
+      "aria-label": `Use ${p.iso_639_1 ? p.iso_639_1.toUpperCase() : "textless"} poster`,
+      "aria-pressed": active
+    }, /*#__PURE__*/React.createElement("img", {
+      src: IMG + "w185" + p.file_path,
+      alt: "",
+      loading: "lazy"
+    }), /*#__PURE__*/React.createElement("span", {
+      className: "poster-lang"
+    }, p.iso_639_1 ? p.iso_639_1.toUpperCase() : "—"));
+  })))));
 }
 
 /* ---------------- lists ---------------- */
 
-function ListsPage({ lists, entries, movieCache, onCreate, onOpen, onDelete }) {
+function ListsPage({
+  lists,
+  sharedLists,
+  entries,
+  movieCache,
+  currentUserId,
+  onCreate,
+  onOpen,
+  onDelete
+}) {
   const [name, setName] = useState("");
+  const [visibility, setVisibility] = useState("private");
   const [confirm, setConfirm] = useState(null);
-
-  return (/*#__PURE__*/
-    React.createElement("section", null, /*#__PURE__*/
-    React.createElement("h1", { className: "page-head" }, "Lists"), /*#__PURE__*/
-    React.createElement("div", { className: "row list-create" }, /*#__PURE__*/
-    React.createElement("input", {
-      type: "text",
-      placeholder: "New list \u2014 e.g. Best of 2026",
-      value: name,
-      onChange: (e) => setName(e.target.value),
-      onKeyDown: (e) => {if (e.key === "Enter" && name.trim()) {onCreate(name.trim());setName("");}} }
-    ), /*#__PURE__*/
-    React.createElement("button", { className: "btn-log", disabled: !name.trim(), onClick: () => {onCreate(name.trim());setName("");} }, "Create list"
-
-    )
-    ),
-
-    lists.length === 0 && /*#__PURE__*/
-    React.createElement("p", { className: "quiet-note" }, "No lists yet. Make one for anything \u2014 a year's best, a rewatch pile, a director run."), /*#__PURE__*/
-
-
-    React.createElement("div", { className: "list-cards" },
-    lists.map((l) => {
-      const covers = l.movieIds.slice(0, 4).map((id) => resolveMovie(id, entries, movieCache)).filter(Boolean);
-      return (/*#__PURE__*/
-        React.createElement("div", { className: "list-card", key: l.id }, /*#__PURE__*/
-        React.createElement("button", { className: "list-card-open", onClick: () => onOpen(l.id) }, /*#__PURE__*/
-        React.createElement("div", { className: "list-covers", "aria-hidden": "true" },
-        covers.length === 0 && /*#__PURE__*/React.createElement("div", { className: "thumb-blank" }),
-        covers.map((m) =>
-        m.posterPath ? /*#__PURE__*/
-        React.createElement("img", { key: m.id, src: IMG + "w92" + m.posterPath, alt: "", loading: "lazy" }) : /*#__PURE__*/
-
-        React.createElement("div", { className: "thumb-blank", key: m.id })
-
-        )
-        ), /*#__PURE__*/
-        React.createElement("div", null, /*#__PURE__*/
-        React.createElement("div", { className: "list-name" }, l.name), /*#__PURE__*/
-        React.createElement("div", { className: "quiet-note" }, l.movieIds.length, " ", l.movieIds.length === 1 ? "movie" : "movies")
-        )
-        ),
-        confirm === l.id ? /*#__PURE__*/
-        React.createElement("div", { className: "row" }, /*#__PURE__*/
-        React.createElement("button", { className: "btn-danger", onClick: () => {onDelete(l.id);setConfirm(null);} }, "Delete"), /*#__PURE__*/
-        React.createElement("button", { className: "btn-ghost", onClick: () => setConfirm(null) }, "Keep")
-        ) : /*#__PURE__*/
-
-        React.createElement("button", { className: "btn-ghost danger", onClick: () => setConfirm(l.id), "aria-label": `Delete list ${l.name}` }, "\u2715")
-
-        ));
-
-    })
-    )
-    ));
-
+  const allLists = [...lists.map(list => ({
+    ...list,
+    shared: false
+  })), ...sharedLists.map(list => ({
+    ...list,
+    shared: true
+  }))];
+  const create = () => {
+    if (!name.trim()) return;
+    onCreate(name.trim(), visibility === "shared");
+    setName("");
+  };
+  return /*#__PURE__*/React.createElement("section", null, /*#__PURE__*/React.createElement("h1", {
+    className: "page-head"
+  }, "Lists"), /*#__PURE__*/React.createElement("div", {
+    className: "row list-create"
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "text",
+    placeholder: "New list — e.g. Best of 2026",
+    value: name,
+    onChange: e => setName(e.target.value),
+    onKeyDown: e => {
+      if (e.key === "Enter") create();
+    }
+  }), /*#__PURE__*/React.createElement("select", {
+    className: "pill-select list-visibility",
+    value: visibility,
+    onChange: event => setVisibility(event.target.value),
+    "aria-label": "List visibility"
+  }, /*#__PURE__*/React.createElement("option", {
+    value: "private"
+  }, "Private"), /*#__PURE__*/React.createElement("option", {
+    value: "shared"
+  }, "Shared with circle")), /*#__PURE__*/React.createElement("button", {
+    className: "btn-log",
+    disabled: !name.trim(),
+    onClick: create
+  }, "Create list")), allLists.length === 0 && /*#__PURE__*/React.createElement("p", {
+    className: "quiet-note"
+  }, "No lists yet. Make one for anything — a year's best, a rewatch pile, a director run."), /*#__PURE__*/React.createElement("div", {
+    className: "list-cards"
+  }, allLists.map(l => {
+    const covers = l.movieIds.slice(0, 4).map(id => resolveMovie(id, entries, movieCache)).filter(Boolean);
+    const owner = l.profiles || {};
+    const canDelete = !l.shared || l.owner_id === currentUserId;
+    return /*#__PURE__*/React.createElement("div", {
+      className: "list-card",
+      key: l.id
+    }, /*#__PURE__*/React.createElement("button", {
+      className: "list-card-open",
+      onClick: () => onOpen(l.id)
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "list-covers",
+      "aria-hidden": "true"
+    }, covers.length === 0 && /*#__PURE__*/React.createElement("div", {
+      className: "thumb-blank"
+    }), covers.map(m => m.posterPath ? /*#__PURE__*/React.createElement("img", {
+      key: m.id,
+      src: IMG + "w92" + m.posterPath,
+      alt: "",
+      loading: "lazy"
+    }) : /*#__PURE__*/React.createElement("div", {
+      className: "thumb-blank",
+      key: m.id
+    }))), /*#__PURE__*/React.createElement("div", null, /*#__PURE__*/React.createElement("div", {
+      className: "list-name"
+    }, l.name, " ", l.shared && /*#__PURE__*/React.createElement("span", {
+      className: "shared-badge"
+    }, "Shared")), /*#__PURE__*/React.createElement("div", {
+      className: "quiet-note"
+    }, l.movieIds.length, " ", l.movieIds.length === 1 ? "movie" : "movies"), l.shared && /*#__PURE__*/React.createElement("div", {
+      className: "list-owner"
+    }, "Started by ", owner.display_name || owner.username || "a Marquee member"))), canDelete && confirm === l.id ? /*#__PURE__*/React.createElement("div", {
+      className: "row"
+    }, /*#__PURE__*/React.createElement("button", {
+      className: "btn-danger",
+      onClick: () => {
+        onDelete(l.id, l.shared);
+        setConfirm(null);
+      }
+    }, "Delete"), /*#__PURE__*/React.createElement("button", {
+      className: "btn-ghost",
+      onClick: () => setConfirm(null)
+    }, "Keep")) : canDelete ? /*#__PURE__*/React.createElement("button", {
+      className: "btn-ghost danger",
+      onClick: () => setConfirm(l.id),
+      "aria-label": `Delete list ${l.name}`
+    }, "✕") : null);
+  })));
 }
-
-function ListDetail({ list, entries, movieCache, tmdb, onCacheMovie, onBack, onOpenMovie, onUpdate }) {
+function ListDetail({
+  list,
+  entries,
+  movieCache,
+  tmdb,
+  onCacheMovie,
+  currentUserId,
+  onBack,
+  onOpenMovie,
+  onUpdate
+}) {
   const [renaming, setRenaming] = useState(false);
   const [nameDraft, setNameDraft] = useState(list ? list.name : "");
   const [adding, setAdding] = useState(false);
@@ -1719,11 +2406,9 @@ function ListDetail({ list, entries, movieCache, tmdb, onCacheMovie, onBack, onO
   const [searchError, setSearchError] = useState(null);
   const searchRef = useRef(null);
   const timer = useRef(null);
-
   useEffect(() => {
     if (adding && searchRef.current) searchRef.current.focus();
   }, [adding]);
-
   useEffect(() => {
     if (!adding) return;
     window.clearTimeout(timer.current);
@@ -1736,7 +2421,10 @@ function ListDetail({ list, entries, movieCache, tmdb, onCacheMovie, onBack, onO
       setSearching(true);
       setSearchError(null);
       try {
-        const data = await tmdb("/search/movie", { query: query.trim(), include_adult: "false" });
+        const data = await tmdb("/search/movie", {
+          query: query.trim(),
+          include_adult: "false"
+        });
         setResults((data.results || []).slice(0, 12));
       } catch (err) {
         setSearchError(friendlyError(err));
@@ -1747,142 +2435,183 @@ function ListDetail({ list, entries, movieCache, tmdb, onCacheMovie, onBack, onO
     }, 400);
     return () => window.clearTimeout(timer.current);
   }, [query, adding, tmdb]);
-
-  if (!list) return /*#__PURE__*/React.createElement("p", { className: "quiet-note" }, "That list is gone.");
-
+  if (!list) return /*#__PURE__*/React.createElement("p", {
+    className: "quiet-note"
+  }, "That list is gone.");
   const move = (idx, dir) => {
     const next = [...list.movieIds];
     const j = idx + dir;
     if (j < 0 || j >= next.length) return;
     [next[idx], next[j]] = [next[j], next[idx]];
-    onUpdate({ movieIds: next });
+    onUpdate({
+      movieIds: next
+    });
   };
-
-  const addMovie = (movie) => {
+  const addMovie = movie => {
     const id = String(movie.id);
     onCacheMovie(movie);
     if (!list.movieIds.includes(id)) {
-      onUpdate({ movieIds: [...list.movieIds, id] });
+      onUpdate({
+        movieIds: [...list.movieIds, id],
+        addedMovie: movie
+      });
     }
   };
-
   const closeAdding = () => {
     setAdding(false);
     setQuery("");
     setResults([]);
     setSearchError(null);
   };
-
-  return (/*#__PURE__*/
-    React.createElement("section", null, /*#__PURE__*/
-    React.createElement("button", { className: "btn-ghost back", onClick: onBack }, "\u2190 Lists"),
-    renaming ? /*#__PURE__*/
-    React.createElement("div", { className: "row" }, /*#__PURE__*/
-    React.createElement("input", { type: "text", value: nameDraft, onChange: (e) => setNameDraft(e.target.value), autoFocus: true }), /*#__PURE__*/
-    React.createElement("button", { className: "btn-log", onClick: () => {onUpdate({ name: nameDraft.trim() || list.name });setRenaming(false);} }, "Save")
-    ) : /*#__PURE__*/
-
-    React.createElement("h1", { className: "page-head list-head" }, /*#__PURE__*/
-    React.createElement("span", null, list.name), /*#__PURE__*/
-    React.createElement("span", { className: "list-head-actions" }, /*#__PURE__*/
-    React.createElement("button", { className: "icon-btn", onClick: () => {setNameDraft(list.name);setRenaming(true);}, "aria-label": "Rename list" }, /*#__PURE__*/
-    React.createElement(IconEdit, null)
-    ), /*#__PURE__*/
-    React.createElement("button", { className: "icon-btn", onClick: () => setAdding(true), "aria-label": "Add films to this list" }, /*#__PURE__*/
-    React.createElement(IconPlus, null)
-    )
-    )
-    ),
-
-
-    list.movieIds.length === 0 && /*#__PURE__*/
-    React.createElement("p", { className: "quiet-note" }, "Empty so far. Tap + above to search for and add any film."), /*#__PURE__*/
-
-
-    React.createElement("ol", { className: "list-rows" },
-    list.movieIds.map((id, idx) => {
-      const m = resolveMovie(id, entries, movieCache);
-      if (!m) return null;
-      return (/*#__PURE__*/
-        React.createElement("li", { className: "list-row", key: id }, /*#__PURE__*/
-        React.createElement("span", { className: "list-row-num" }, idx + 1), /*#__PURE__*/
-        React.createElement("button", { className: "list-row-main", onClick: () => onOpenMovie(id), disabled: !m.logged },
-        m.posterPath ? /*#__PURE__*/React.createElement("img", { src: IMG + "w92" + m.posterPath, alt: "", loading: "lazy" }) : /*#__PURE__*/React.createElement("div", { className: "thumb-blank" }), /*#__PURE__*/
-        React.createElement("span", { className: "result-title" }, m.title), /*#__PURE__*/
-        React.createElement("span", { className: "result-year" }, yearOf(m)),
-        m.logged ? /*#__PURE__*/React.createElement(StarDisplay, { value: entries[id].rating, size: 12 }) : /*#__PURE__*/React.createElement("span", { className: "result-flag" }, "not logged")
-        ), /*#__PURE__*/
-        React.createElement("div", { className: "row-btns" }, /*#__PURE__*/
-        React.createElement("button", { className: "btn-ghost", onClick: () => move(idx, -1), disabled: idx === 0, "aria-label": `Move ${m.title} up` }, "\u2191"), /*#__PURE__*/
-        React.createElement("button", { className: "btn-ghost", onClick: () => move(idx, 1), disabled: idx === list.movieIds.length - 1, "aria-label": `Move ${m.title} down` }, "\u2193"), /*#__PURE__*/
-        React.createElement("button", {
-          className: "btn-ghost danger",
-          "aria-label": `Remove ${m.title} from list`,
-          onClick: () => onUpdate({ movieIds: list.movieIds.filter((x) => x !== id) }) },
-        "\u2715")
-        )
-        ));
-
-    })
-    ),
-
-    adding && /*#__PURE__*/
-    React.createElement("div", { className: "overlay", onMouseDown: (e) => e.target === e.currentTarget && closeAdding() }, /*#__PURE__*/
-    React.createElement("div", { className: "modal", role: "dialog", "aria-modal": "true", "aria-label": "Add films to list" }, /*#__PURE__*/
-    React.createElement("div", { className: "modal-head" }, /*#__PURE__*/
-    React.createElement("h2", null, "Add to \u201C", list.name, "\u201D"), /*#__PURE__*/
-    React.createElement("button", { className: "btn-ghost", onClick: closeAdding, "aria-label": "Close" }, "\u2715")
-    ), /*#__PURE__*/
-    React.createElement("input", {
-      ref: searchRef,
-      className: "search-big",
-      type: "search",
-      placeholder: "Search TMDB by title\u2026",
-      value: query,
-      onChange: (e) => setQuery(e.target.value) }
-    ),
-    searchError && /*#__PURE__*/React.createElement("div", { className: "notice error" }, searchError),
-    searching && /*#__PURE__*/React.createElement("div", { className: "quiet-note" }, "Searching\u2026"), /*#__PURE__*/
-    React.createElement("ul", { className: "results" },
-    results.map((r) => {
-      const already = list.movieIds.includes(String(r.id));
-      return (/*#__PURE__*/
-        React.createElement("li", { key: r.id }, /*#__PURE__*/
-        React.createElement("button", { className: "result", onClick: () => addMovie(r) },
-        r.poster_path ? /*#__PURE__*/
-        React.createElement("img", { src: IMG + "w92" + r.poster_path, alt: "", loading: "lazy" }) : /*#__PURE__*/
-
-        React.createElement("div", { className: "thumb-blank" }), /*#__PURE__*/
-
-        React.createElement("span", { className: "result-title" }, r.title), /*#__PURE__*/
-        React.createElement("span", { className: "result-year" }, r.release_date ? r.release_date.slice(0, 4) : ""),
-        already && /*#__PURE__*/React.createElement("span", { className: "result-flag" }, "added")
-        )
-        ));
-
-    })
-    ),
-    !searching && query && results.length === 0 && !searchError && /*#__PURE__*/
-    React.createElement("p", { className: "quiet-note" }, "No matches. Check the spelling or try a shorter title.")
-
-    )
-    )
-
-    ));
-
+  return /*#__PURE__*/React.createElement("section", null, /*#__PURE__*/React.createElement("button", {
+    className: "btn-ghost back",
+    onClick: onBack
+  }, "← Lists"), renaming ? /*#__PURE__*/React.createElement("div", {
+    className: "row"
+  }, /*#__PURE__*/React.createElement("input", {
+    type: "text",
+    value: nameDraft,
+    onChange: e => setNameDraft(e.target.value),
+    autoFocus: true
+  }), /*#__PURE__*/React.createElement("button", {
+    className: "btn-log",
+    onClick: () => {
+      onUpdate({
+        name: nameDraft.trim() || list.name
+      });
+      setRenaming(false);
+    }
+  }, "Save")) : /*#__PURE__*/React.createElement("h1", {
+    className: "page-head list-head"
+  }, /*#__PURE__*/React.createElement("span", null, list.name, " ", list.shared && /*#__PURE__*/React.createElement("span", {
+    className: "shared-badge"
+  }, "Shared")), /*#__PURE__*/React.createElement("span", {
+    className: "list-head-actions"
+  }, (!list.shared || list.owner_id === currentUserId) && /*#__PURE__*/React.createElement("button", {
+    className: "icon-btn",
+    onClick: () => {
+      setNameDraft(list.name);
+      setRenaming(true);
+    },
+    "aria-label": "Rename list"
+  }, /*#__PURE__*/React.createElement(IconEdit, null)), /*#__PURE__*/React.createElement("button", {
+    className: "icon-btn",
+    onClick: () => setAdding(true),
+    "aria-label": "Add films to this list"
+  }, /*#__PURE__*/React.createElement(IconPlus, null)))), list.shared && /*#__PURE__*/React.createElement("p", {
+    className: "quiet-note shared-list-note"
+  }, "Everyone in your Marquee circle can add, remove, and reorder films in this list."), list.movieIds.length === 0 && /*#__PURE__*/React.createElement("p", {
+    className: "quiet-note"
+  }, "Empty so far. Tap + above to search for and add any film."), /*#__PURE__*/React.createElement("ol", {
+    className: "list-rows"
+  }, list.movieIds.map((id, idx) => {
+    const m = resolveMovie(id, entries, movieCache);
+    if (!m) return null;
+    return /*#__PURE__*/React.createElement("li", {
+      className: "list-row",
+      key: id
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "list-row-num"
+    }, idx + 1), /*#__PURE__*/React.createElement("button", {
+      className: "list-row-main",
+      onClick: () => onOpenMovie(id),
+      disabled: !m.logged
+    }, m.posterPath ? /*#__PURE__*/React.createElement("img", {
+      src: IMG + "w92" + m.posterPath,
+      alt: "",
+      loading: "lazy"
+    }) : /*#__PURE__*/React.createElement("div", {
+      className: "thumb-blank"
+    }), /*#__PURE__*/React.createElement("span", {
+      className: "result-title"
+    }, m.title), /*#__PURE__*/React.createElement("span", {
+      className: "result-year"
+    }, yearOf(m)), m.logged ? /*#__PURE__*/React.createElement(StarDisplay, {
+      value: entries[id].rating,
+      size: 12
+    }) : /*#__PURE__*/React.createElement("span", {
+      className: "result-flag"
+    }, "not logged")), /*#__PURE__*/React.createElement("div", {
+      className: "row-btns"
+    }, /*#__PURE__*/React.createElement("button", {
+      className: "btn-ghost",
+      onClick: () => move(idx, -1),
+      disabled: idx === 0,
+      "aria-label": `Move ${m.title} up`
+    }, "↑"), /*#__PURE__*/React.createElement("button", {
+      className: "btn-ghost",
+      onClick: () => move(idx, 1),
+      disabled: idx === list.movieIds.length - 1,
+      "aria-label": `Move ${m.title} down`
+    }, "↓"), /*#__PURE__*/React.createElement("button", {
+      className: "btn-ghost danger",
+      "aria-label": `Remove ${m.title} from list`,
+      onClick: () => onUpdate({
+        movieIds: list.movieIds.filter(x => x !== id)
+      })
+    }, "✕")));
+  })), adding && /*#__PURE__*/React.createElement("div", {
+    className: "overlay",
+    onMouseDown: e => e.target === e.currentTarget && closeAdding()
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "modal",
+    role: "dialog",
+    "aria-modal": "true",
+    "aria-label": "Add films to list"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "modal-head"
+  }, /*#__PURE__*/React.createElement("h2", null, "Add to “", list.name, "”"), /*#__PURE__*/React.createElement("button", {
+    className: "btn-ghost",
+    onClick: closeAdding,
+    "aria-label": "Close"
+  }, "✕")), /*#__PURE__*/React.createElement("input", {
+    ref: searchRef,
+    className: "search-big",
+    type: "search",
+    placeholder: "Search TMDB by title…",
+    value: query,
+    onChange: e => setQuery(e.target.value)
+  }), searchError && /*#__PURE__*/React.createElement("div", {
+    className: "notice error"
+  }, searchError), searching && /*#__PURE__*/React.createElement("div", {
+    className: "quiet-note"
+  }, "Searching…"), /*#__PURE__*/React.createElement("ul", {
+    className: "results"
+  }, results.map(r => {
+    const already = list.movieIds.includes(String(r.id));
+    return /*#__PURE__*/React.createElement("li", {
+      key: r.id
+    }, /*#__PURE__*/React.createElement("button", {
+      className: "result",
+      onClick: () => addMovie(r)
+    }, r.poster_path ? /*#__PURE__*/React.createElement("img", {
+      src: IMG + "w92" + r.poster_path,
+      alt: "",
+      loading: "lazy"
+    }) : /*#__PURE__*/React.createElement("div", {
+      className: "thumb-blank"
+    }), /*#__PURE__*/React.createElement("span", {
+      className: "result-title"
+    }, r.title), /*#__PURE__*/React.createElement("span", {
+      className: "result-year"
+    }, r.release_date ? r.release_date.slice(0, 4) : ""), already && /*#__PURE__*/React.createElement("span", {
+      className: "result-flag"
+    }, "added")));
+  })), !searching && query && results.length === 0 && !searchError && /*#__PURE__*/React.createElement("p", {
+    className: "quiet-note"
+  }, "No matches. Check the spelling or try a shorter title."))));
 }
-
-function StatsPage({ entries }) {
+function StatsPage({
+  entries
+}) {
   const stats = useMemo(() => {
     if (entries.length === 0) return null;
     const avg = entries.reduce((s, e) => s + e.rating, 0) / entries.length;
-
     const genreCount = {};
-    entries.forEach((e) => (e.genres || []).forEach((g) => genreCount[g] = (genreCount[g] || 0) + 1));
+    entries.forEach(e => (e.genres || []).forEach(g => genreCount[g] = (genreCount[g] || 0) + 1));
     const topGenre = Object.entries(genreCount).sort((a, b) => b[1] - a[1])[0];
-
     const decadeCount = {};
-    entries.forEach((e) => {
+    entries.forEach(e => {
       const y = e.releaseDate ? Number(e.releaseDate.slice(0, 4)) : null;
       if (y) {
         const d = Math.floor(y / 10) * 10;
@@ -1897,114 +2626,151 @@ function StatsPage({ entries }) {
     for (let i = 11; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
       const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-      months.push({ key, label: d.toLocaleDateString(undefined, { month: "short" }), count: 0 });
+      months.push({
+        key,
+        label: d.toLocaleDateString(undefined, {
+          month: "short"
+        }),
+        count: 0
+      });
     }
-    entries.forEach((e) => {
+    entries.forEach(e => {
       const key = (e.watchedDate || "").slice(0, 7);
-      const m = months.find((x) => x.key === key);
+      const m = months.find(x => x.key === key);
       if (m) m.count++;
     });
-    const maxMonth = Math.max(1, ...months.map((m) => m.count));
-
+    const maxMonth = Math.max(1, ...months.map(m => m.count));
     const ratingDist = {};
-    entries.forEach((e) => ratingDist[e.rating] = (ratingDist[e.rating] || 0) + 1);
-
-    return { avg, topGenre, topDecade, months, maxMonth, ratingDist };
+    entries.forEach(e => ratingDist[e.rating] = (ratingDist[e.rating] || 0) + 1);
+    return {
+      avg,
+      topGenre,
+      topDecade,
+      months,
+      maxMonth,
+      ratingDist
+    };
   }, [entries]);
-
   if (!stats) {
-    return (/*#__PURE__*/
-      React.createElement("section", null, /*#__PURE__*/
-      React.createElement("h1", { className: "page-head" }, "Stats"), /*#__PURE__*/
-      React.createElement("p", { className: "quiet-note" }, "Numbers show up once you've logged a few movies.")
-      ));
-
+    return /*#__PURE__*/React.createElement("section", null, /*#__PURE__*/React.createElement("h1", {
+      className: "page-head"
+    }, "Stats"), /*#__PURE__*/React.createElement("p", {
+      className: "quiet-note"
+    }, "Numbers show up once you've logged a few movies."));
   }
-
-  return (/*#__PURE__*/
-    React.createElement("section", null, /*#__PURE__*/
-    React.createElement("h1", { className: "page-head" }, "Stats"), /*#__PURE__*/
-    React.createElement("div", { className: "stat-cards" }, /*#__PURE__*/
-    React.createElement("div", { className: "stat-card" }, /*#__PURE__*/
-    React.createElement("div", { className: "stat-num" }, entries.length), /*#__PURE__*/
-    React.createElement("div", { className: "stat-label" }, "movies logged")
-    ), /*#__PURE__*/
-    React.createElement("div", { className: "stat-card" }, /*#__PURE__*/
-    React.createElement("div", { className: "stat-num" }, stats.avg.toFixed(2)), /*#__PURE__*/
-    React.createElement("div", { className: "stat-label" }, "average rating")
-    ), /*#__PURE__*/
-    React.createElement("div", { className: "stat-card" }, /*#__PURE__*/
-    React.createElement("div", { className: "stat-num small" }, stats.topGenre ? stats.topGenre[0] : "—"), /*#__PURE__*/
-    React.createElement("div", { className: "stat-label" }, "most-logged genre", stats.topGenre ? ` (${stats.topGenre[1]})` : "")
-    ), /*#__PURE__*/
-    React.createElement("div", { className: "stat-card" }, /*#__PURE__*/
-    React.createElement("div", { className: "stat-num small" }, stats.topDecade ? stats.topDecade[0] + "s" : "—"), /*#__PURE__*/
-    React.createElement("div", { className: "stat-label" }, "most-logged decade", stats.topDecade ? ` (${stats.topDecade[1]})` : "")
-    )
-    ), /*#__PURE__*/
-
-    React.createElement("h2", { className: "section-head" }, "Movies by month"), /*#__PURE__*/
-    React.createElement("div", { className: "bar-chart", role: "img", "aria-label": "Movies watched per month over the last year" },
-    stats.months.map((m) => /*#__PURE__*/
-    React.createElement("div", { className: "bar-col", key: m.key }, /*#__PURE__*/
-    React.createElement("div", { className: "bar-val" }, m.count > 0 ? m.count : ""), /*#__PURE__*/
-    React.createElement("div", { className: "bar", style: { height: m.count / stats.maxMonth * 120 + "px" } }), /*#__PURE__*/
-    React.createElement("div", { className: "bar-label" }, m.label)
-    )
-    )
-    ), /*#__PURE__*/
-
-    React.createElement("h2", { className: "section-head" }, "Ratings"), /*#__PURE__*/
-    React.createElement("div", { className: "rating-histogram", role: "img", "aria-label": "Rating distribution from half a star to five stars" },
-    [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5].map((r) => {
-      const c = stats.ratingDist[r] || 0;
-      const max = Math.max(1, ...Object.values(stats.ratingDist));
-      return (/*#__PURE__*/
-        React.createElement("div", { className: "rating-column", key: r, "aria-label": `${r} stars: ${c} movies` }, /*#__PURE__*/
-        React.createElement("span", { className: "rating-count" }, c || ""), /*#__PURE__*/
-        React.createElement("div", { className: "rating-track" }, /*#__PURE__*/
-        React.createElement("div", {
-          className: "rating-bar",
-          style: { height: Math.max(2, c / max * 120) + "px" } }
-        )
-        ), /*#__PURE__*/
-        React.createElement("span", { className: "rating-label" }, r)
-        ));
-
-    })
-    )
-    ));
-
+  return /*#__PURE__*/React.createElement("section", null, /*#__PURE__*/React.createElement("h1", {
+    className: "page-head"
+  }, "Stats"), /*#__PURE__*/React.createElement("div", {
+    className: "stat-cards"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "stat-card"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "stat-num"
+  }, entries.length), /*#__PURE__*/React.createElement("div", {
+    className: "stat-label"
+  }, "movies logged")), /*#__PURE__*/React.createElement("div", {
+    className: "stat-card"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "stat-num"
+  }, stats.avg.toFixed(2)), /*#__PURE__*/React.createElement("div", {
+    className: "stat-label"
+  }, "average rating")), /*#__PURE__*/React.createElement("div", {
+    className: "stat-card"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "stat-num small"
+  }, stats.topGenre ? stats.topGenre[0] : "—"), /*#__PURE__*/React.createElement("div", {
+    className: "stat-label"
+  }, "most-logged genre", stats.topGenre ? ` (${stats.topGenre[1]})` : "")), /*#__PURE__*/React.createElement("div", {
+    className: "stat-card"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "stat-num small"
+  }, stats.topDecade ? stats.topDecade[0] + "s" : "—"), /*#__PURE__*/React.createElement("div", {
+    className: "stat-label"
+  }, "most-logged decade", stats.topDecade ? ` (${stats.topDecade[1]})` : ""))), /*#__PURE__*/React.createElement("h2", {
+    className: "section-head"
+  }, "Movies by month"), /*#__PURE__*/React.createElement("div", {
+    className: "bar-chart",
+    role: "img",
+    "aria-label": "Movies watched per month over the last year"
+  }, stats.months.map(m => /*#__PURE__*/React.createElement("div", {
+    className: "bar-col",
+    key: m.key
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "bar-val"
+  }, m.count > 0 ? m.count : ""), /*#__PURE__*/React.createElement("div", {
+    className: "bar",
+    style: {
+      height: m.count / stats.maxMonth * 120 + "px"
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "bar-label"
+  }, m.label)))), /*#__PURE__*/React.createElement("h2", {
+    className: "section-head"
+  }, "Ratings"), /*#__PURE__*/React.createElement("div", {
+    className: "rating-histogram",
+    role: "img",
+    "aria-label": "Rating distribution from half a star to five stars"
+  }, [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5].map(r => {
+    const c = stats.ratingDist[r] || 0;
+    const max = Math.max(1, ...Object.values(stats.ratingDist));
+    return /*#__PURE__*/React.createElement("div", {
+      className: "rating-column",
+      key: r,
+      "aria-label": `${r} stars: ${c} movies`
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "rating-count"
+    }, c || ""), /*#__PURE__*/React.createElement("div", {
+      className: "rating-track"
+    }, /*#__PURE__*/React.createElement("div", {
+      className: "rating-bar",
+      style: {
+        height: Math.max(2, c / max * 120) + "px"
+      }
+    })), /*#__PURE__*/React.createElement("span", {
+      className: "rating-label"
+    }, r));
+  })));
 }
 
 /* ---------------- settings ---------------- */
 
-function SettingsPage({ profile, email, onSaveProfile, onUploadAvatar, onImportLegacy, onSignOut, onOpenStats }) {
+function SettingsPage({
+  profile,
+  email,
+  onSaveProfile,
+  onChangeTheme,
+  onUploadAvatar,
+  onImportLegacy,
+  onSignOut,
+  onOpenStats
+}) {
   const [username, setUsername] = useState(profile ? profile.username : "");
   const [displayName, setDisplayName] = useState(profile ? profile.display_name : "");
   const [bio, setBio] = useState(profile && profile.bio ? profile.bio : "");
   const [profileError, setProfileError] = useState(null);
+  const [themeError, setThemeError] = useState(null);
   const [savingProfile, setSavingProfile] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [avatarError, setAvatarError] = useState(null);
   const [importing, setImporting] = useState(false);
   const [importError, setImportError] = useState(null);
-
   useEffect(() => {
     setUsername(profile ? profile.username : "");
     setDisplayName(profile ? profile.display_name : "");
     setBio(profile && profile.bio ? profile.bio : "");
   }, [profile]);
-
   const saveProfile = async () => {
     setSavingProfile(true);
     setProfileError(null);
-    const error = await onSaveProfile({ username, displayName, bio });
+    const error = await onSaveProfile({
+      username,
+      displayName,
+      bio
+    });
     setProfileError(error);
     setSavingProfile(false);
   };
-
-  const chooseAvatar = async (event) => {
+  const chooseAvatar = async event => {
     const file = event.target.files && event.target.files[0];
     event.target.value = "";
     if (!file) return;
@@ -2014,7 +2780,6 @@ function SettingsPage({ profile, email, onSaveProfile, onUploadAvatar, onImportL
     setAvatarError(error);
     setUploadingAvatar(false);
   };
-
   const importLegacy = async () => {
     if (!window.confirm("Import the old shared diary into this account? Existing account entries with the same movie will be updated.")) return;
     setImporting(true);
@@ -2023,103 +2788,147 @@ function SettingsPage({ profile, email, onSaveProfile, onUploadAvatar, onImportL
     setImportError(error);
     setImporting(false);
   };
-
-  return (/*#__PURE__*/
-    React.createElement("section", { className: "settings" }, /*#__PURE__*/
-    React.createElement("h1", { className: "page-head" }, "Profile"), /*#__PURE__*/
-
-    React.createElement("div", { className: "profile-summary" }, /*#__PURE__*/
-    React.createElement("div", { className: "avatar large" + (profile && profile.avatar_url ? " has-image" : "") },
-    profile && profile.avatar_url ? /*#__PURE__*/
-    React.createElement("img", { src: profile.avatar_url, alt: "Your profile picture" }) :
-    (displayName || username || email || "?").slice(0, 1).toUpperCase()
-    ), /*#__PURE__*/
-    React.createElement("div", { className: "profile-summary-copy" }, /*#__PURE__*/
-    React.createElement("div", { className: "profile-summary-name" }, profile ? profile.display_name : "Marquee user"), /*#__PURE__*/
-    React.createElement("div", { className: "quiet-note" }, email),
-    profile && profile.bio && /*#__PURE__*/React.createElement("p", { className: "profile-bio-copy" }, profile.bio), /*#__PURE__*/
-    React.createElement("label", { className: "btn-ghost avatar-upload" + (uploadingAvatar ? " disabled" : "") },
-    uploadingAvatar ? "Uploading…" : profile && profile.avatar_url ? "Change picture" : "Add picture", /*#__PURE__*/
-    React.createElement("input", { type: "file", accept: "image/jpeg,image/png,image/webp", onChange: chooseAvatar, disabled: uploadingAvatar })
-    )
-    )
-    ),
-    avatarError && /*#__PURE__*/React.createElement("div", { className: "notice error" }, avatarError), /*#__PURE__*/
-
-    React.createElement("div", { className: "profile-fields" }, /*#__PURE__*/
-    React.createElement("label", { className: "field" }, /*#__PURE__*/
-    React.createElement("span", null, "Display name"), /*#__PURE__*/
-    React.createElement("input", { type: "text", value: displayName, onChange: (e) => setDisplayName(e.target.value), maxLength: 40 })
-    ), /*#__PURE__*/
-    React.createElement("label", { className: "field" }, /*#__PURE__*/
-    React.createElement("span", null, "Username"), /*#__PURE__*/
-    React.createElement("input", {
-      type: "text",
-      value: username,
-      onChange: (e) => setUsername(e.target.value.toLowerCase()),
-      maxLength: 30,
-      autoCapitalize: "none",
-      spellCheck: false }
-    )
-    ), /*#__PURE__*/
-    React.createElement("label", { className: "field profile-bio-field" }, /*#__PURE__*/
-    React.createElement("span", null, "Bio"), /*#__PURE__*/
-    React.createElement("textarea", {
-      value: bio,
-      onChange: (e) => setBio(e.target.value.slice(0, 160)),
-      rows: 3,
-      maxLength: 160,
-      placeholder: "A sentence or two about your taste in movies." }
-    ), /*#__PURE__*/
-    React.createElement("small", null, bio.length, "/160")
-    )
-    ), /*#__PURE__*/
-    React.createElement("button", { className: "btn-log", onClick: saveProfile, disabled: savingProfile || !username.trim() },
-    savingProfile ? "Saving…" : "Save profile"
-    ),
-    profileError && /*#__PURE__*/React.createElement("div", { className: "notice error" }, profileError), /*#__PURE__*/
-
-    React.createElement("h2", { className: "section-head" }, "Your account"), /*#__PURE__*/
-    React.createElement("div", { className: "account-actions" }, /*#__PURE__*/
-    React.createElement("button", { className: "btn-ghost", onClick: onOpenStats }, "View your stats"), /*#__PURE__*/
-    React.createElement("button", { className: "btn-ghost", onClick: importLegacy, disabled: importing },
-    importing ? "Importing…" : "Import old diary"
-    ), /*#__PURE__*/
-    React.createElement("button", { className: "btn-ghost danger", onClick: onSignOut }, "Sign out")
-    ), /*#__PURE__*/
-    React.createElement("p", { className: "quiet-note" }, "Import old diary is only for the owner of the original shared Marquee diary. Friends should leave it alone."
-
-    ),
-    importError && /*#__PURE__*/React.createElement("div", { className: "notice error" }, importError), /*#__PURE__*/
-
-    React.createElement("h2", { className: "section-head" }, "Movie data"), /*#__PURE__*/
-    React.createElement("p", { className: "quiet-note tmdb-credit" }, "Film data and images are supplied by ", /*#__PURE__*/
-    React.createElement("a", { href: "https://www.themoviedb.org", target: "_blank", rel: "noreferrer" }, "TMDB"), ". This product uses the TMDB API but is not endorsed or certified by TMDB."
-
-    )
-    ));
-
+  return /*#__PURE__*/React.createElement("section", {
+    className: "settings"
+  }, /*#__PURE__*/React.createElement("h1", {
+    className: "page-head"
+  }, "Profile"), /*#__PURE__*/React.createElement("div", {
+    className: "profile-summary"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "avatar large" + (profile && profile.avatar_url ? " has-image" : "")
+  }, profile && profile.avatar_url ? /*#__PURE__*/React.createElement("img", {
+    src: profile.avatar_url,
+    alt: "Your profile picture"
+  }) : (displayName || username || email || "?").slice(0, 1).toUpperCase()), /*#__PURE__*/React.createElement("div", {
+    className: "profile-summary-copy"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "profile-summary-name"
+  }, profile ? profile.display_name : "Marquee user"), /*#__PURE__*/React.createElement("div", {
+    className: "quiet-note"
+  }, email), profile && profile.bio && /*#__PURE__*/React.createElement("p", {
+    className: "profile-bio-copy"
+  }, profile.bio), /*#__PURE__*/React.createElement("label", {
+    className: "btn-ghost avatar-upload" + (uploadingAvatar ? " disabled" : "")
+  }, uploadingAvatar ? "Uploading…" : profile && profile.avatar_url ? "Change picture" : "Add picture", /*#__PURE__*/React.createElement("input", {
+    type: "file",
+    accept: "image/jpeg,image/png,image/webp",
+    onChange: chooseAvatar,
+    disabled: uploadingAvatar
+  })))), avatarError && /*#__PURE__*/React.createElement("div", {
+    className: "notice error"
+  }, avatarError), /*#__PURE__*/React.createElement("div", {
+    className: "profile-fields"
+  }, /*#__PURE__*/React.createElement("label", {
+    className: "field"
+  }, /*#__PURE__*/React.createElement("span", null, "Display name"), /*#__PURE__*/React.createElement("input", {
+    type: "text",
+    value: displayName,
+    onChange: e => setDisplayName(e.target.value),
+    maxLength: 40
+  })), /*#__PURE__*/React.createElement("label", {
+    className: "field"
+  }, /*#__PURE__*/React.createElement("span", null, "Username"), /*#__PURE__*/React.createElement("input", {
+    type: "text",
+    value: username,
+    onChange: e => setUsername(e.target.value.toLowerCase()),
+    maxLength: 30,
+    autoCapitalize: "none",
+    spellCheck: false
+  })), /*#__PURE__*/React.createElement("label", {
+    className: "field profile-bio-field"
+  }, /*#__PURE__*/React.createElement("span", null, "Bio"), /*#__PURE__*/React.createElement("textarea", {
+    value: bio,
+    onChange: e => setBio(e.target.value.slice(0, 160)),
+    rows: 3,
+    maxLength: 160,
+    placeholder: "A sentence or two about your taste in movies."
+  }), /*#__PURE__*/React.createElement("small", null, bio.length, "/160"))), /*#__PURE__*/React.createElement("button", {
+    className: "btn-log",
+    onClick: saveProfile,
+    disabled: savingProfile || !username.trim()
+  }, savingProfile ? "Saving…" : "Save profile"), profileError && /*#__PURE__*/React.createElement("div", {
+    className: "notice error"
+  }, profileError), /*#__PURE__*/React.createElement("h2", {
+    className: "section-head"
+  }, "Appearance"), /*#__PURE__*/React.createElement("p", {
+    className: "quiet-note theme-intro"
+  }, "Choose a color treatment. Your selection follows your Marquee account across devices."), /*#__PURE__*/React.createElement("div", {
+    className: "theme-grid",
+    role: "radiogroup",
+    "aria-label": "Color scheme"
+  }, THEMES.map(theme => {
+    const selected = (profile && profile.theme_key ? profile.theme_key : "marquee") === theme.key;
+    return /*#__PURE__*/React.createElement("button", {
+      className: "theme-option" + (selected ? " active" : ""),
+      key: theme.key,
+      role: "radio",
+      "aria-checked": selected,
+      onClick: async () => {
+        setThemeError(null);
+        const error = await onChangeTheme(theme.key);
+        setThemeError(error);
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "theme-preview",
+      style: {
+        background: `linear-gradient(135deg, ${theme.colors.join(", ")})`
+      }
+    }), /*#__PURE__*/React.createElement("span", null, theme.name));
+  })), themeError && /*#__PURE__*/React.createElement("div", {
+    className: "notice error"
+  }, themeError), /*#__PURE__*/React.createElement("h2", {
+    className: "section-head"
+  }, "Your account"), /*#__PURE__*/React.createElement("div", {
+    className: "account-actions"
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "btn-ghost",
+    onClick: onOpenStats
+  }, "View your stats"), /*#__PURE__*/React.createElement("button", {
+    className: "btn-ghost",
+    onClick: importLegacy,
+    disabled: importing
+  }, importing ? "Importing…" : "Import old diary"), /*#__PURE__*/React.createElement("button", {
+    className: "btn-ghost danger",
+    onClick: onSignOut
+  }, "Sign out")), /*#__PURE__*/React.createElement("p", {
+    className: "quiet-note"
+  }, "Import old diary is only for the owner of the original shared Marquee diary. Friends should leave it alone."), importError && /*#__PURE__*/React.createElement("div", {
+    className: "notice error"
+  }, importError), /*#__PURE__*/React.createElement("h2", {
+    className: "section-head"
+  }, "Movie data"), /*#__PURE__*/React.createElement("p", {
+    className: "quiet-note tmdb-credit"
+  }, "Film data and images are supplied by ", /*#__PURE__*/React.createElement("a", {
+    href: "https://www.themoviedb.org",
+    target: "_blank",
+    rel: "noreferrer"
+  }, "TMDB"), ". This product uses the TMDB API but is not endorsed or certified by TMDB."));
 }
 
 /* ---------------- authentication ---------------- */
 
-function AuthPage({ client }) {
+function AuthPage({
+  client
+}) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState(null);
   const [error, setError] = useState(null);
-
-  const signIn = async (e) => {
+  const signIn = async e => {
     e.preventDefault();
     setBusy(true);
     setError(null);
     setMessage(null);
-    const { error: signInError } = await client.auth.signInWithPassword({ email: email.trim(), password });
+    const {
+      error: signInError
+    } = await client.auth.signInWithPassword({
+      email: email.trim(),
+      password
+    });
     if (signInError) setError(signInError.message);
     setBusy(false);
   };
-
   const resetPassword = async () => {
     if (!email.trim()) {
       setError("Enter your email address first.");
@@ -2127,130 +2936,166 @@ function AuthPage({ client }) {
     }
     setBusy(true);
     setError(null);
-    const { error: resetError } = await client.auth.resetPasswordForEmail(email.trim(), {
+    const {
+      error: resetError
+    } = await client.auth.resetPasswordForEmail(email.trim(), {
       redirectTo: window.location.origin + window.location.pathname
     });
-    if (resetError) setError(resetError.message);else
-    setMessage("Password reset email sent.");
+    if (resetError) setError(resetError.message);else setMessage("Password reset email sent.");
     setBusy(false);
   };
-
-  return (/*#__PURE__*/
-    React.createElement("div", { className: "mvd auth-shell" }, /*#__PURE__*/
-    React.createElement(StyleTag, null), /*#__PURE__*/
-    React.createElement("div", { className: "auth-brand" }, /*#__PURE__*/React.createElement(LogoMark, { size: 42 }), /*#__PURE__*/React.createElement("span", null, "MARQUEE")), /*#__PURE__*/
-    React.createElement("form", { className: "auth-card", onSubmit: signIn }, /*#__PURE__*/
-    React.createElement("div", { className: "eyebrow" }, "Private film circle"), /*#__PURE__*/
-    React.createElement("h1", null, "Welcome back"), /*#__PURE__*/
-    React.createElement("p", null, "Sign in with the account connected to your Marquee invitation."), /*#__PURE__*/
-    React.createElement("label", { className: "field" }, /*#__PURE__*/
-    React.createElement("span", null, "Email"), /*#__PURE__*/
-    React.createElement("input", { type: "text", inputMode: "email", autoComplete: "email", value: email, onChange: (e) => setEmail(e.target.value) })
-    ), /*#__PURE__*/
-    React.createElement("label", { className: "field" }, /*#__PURE__*/
-    React.createElement("span", null, "Password"), /*#__PURE__*/
-    React.createElement("input", { type: "password", autoComplete: "current-password", value: password, onChange: (e) => setPassword(e.target.value) })
-    ),
-    error && /*#__PURE__*/React.createElement("div", { className: "notice error" }, error),
-    message && /*#__PURE__*/React.createElement("div", { className: "notice good" }, message), /*#__PURE__*/
-    React.createElement("button", { className: "btn-log auth-submit", disabled: busy || !email.trim() || !password },
-    busy ? "Signing in…" : "Sign in"
-    ), /*#__PURE__*/
-    React.createElement("button", { className: "link auth-link", type: "button", onClick: resetPassword, disabled: busy }, "Forgot password?"), /*#__PURE__*/
-    React.createElement("p", { className: "auth-invite-note" }, "Marquee is invite-only. Ask the owner for an invitation if you don't have an account.")
-    )
-    ));
-
+  return /*#__PURE__*/React.createElement("div", {
+    className: "mvd auth-shell"
+  }, /*#__PURE__*/React.createElement(StyleTag, null), /*#__PURE__*/React.createElement("div", {
+    className: "auth-brand"
+  }, /*#__PURE__*/React.createElement(LogoMark, {
+    size: 42
+  }), /*#__PURE__*/React.createElement("span", null, "MARQUEE")), /*#__PURE__*/React.createElement("form", {
+    className: "auth-card",
+    onSubmit: signIn
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "eyebrow"
+  }, "Private film circle"), /*#__PURE__*/React.createElement("h1", null, "Welcome back"), /*#__PURE__*/React.createElement("p", null, "Sign in with the account connected to your Marquee invitation."), /*#__PURE__*/React.createElement("label", {
+    className: "field"
+  }, /*#__PURE__*/React.createElement("span", null, "Email"), /*#__PURE__*/React.createElement("input", {
+    type: "text",
+    inputMode: "email",
+    autoComplete: "email",
+    value: email,
+    onChange: e => setEmail(e.target.value)
+  })), /*#__PURE__*/React.createElement("label", {
+    className: "field"
+  }, /*#__PURE__*/React.createElement("span", null, "Password"), /*#__PURE__*/React.createElement("input", {
+    type: "password",
+    autoComplete: "current-password",
+    value: password,
+    onChange: e => setPassword(e.target.value)
+  })), error && /*#__PURE__*/React.createElement("div", {
+    className: "notice error"
+  }, error), message && /*#__PURE__*/React.createElement("div", {
+    className: "notice good"
+  }, message), /*#__PURE__*/React.createElement("button", {
+    className: "btn-log auth-submit",
+    disabled: busy || !email.trim() || !password
+  }, busy ? "Signing in…" : "Sign in"), /*#__PURE__*/React.createElement("button", {
+    className: "link auth-link",
+    type: "button",
+    onClick: resetPassword,
+    disabled: busy
+  }, "Forgot password?"), /*#__PURE__*/React.createElement("p", {
+    className: "auth-invite-note"
+  }, "Marquee is invite-only. Ask the owner for an invitation if you don't have an account.")));
 }
-
-function SetPasswordPage({ client, onDone }) {
+function SetPasswordPage({
+  client,
+  onDone
+}) {
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState(null);
-
-  const save = async (e) => {
+  const save = async e => {
     e.preventDefault();
     if (password.length < 8) return setError("Use at least 8 characters.");
     if (password !== confirm) return setError("The passwords don't match.");
     setBusy(true);
     setError(null);
-    const { error: updateError } = await client.auth.updateUser({ password });
-    if (updateError) setError(updateError.message);else
-    onDone();
+    const {
+      error: updateError
+    } = await client.auth.updateUser({
+      password
+    });
+    if (updateError) setError(updateError.message);else onDone();
     setBusy(false);
   };
-
-  return (/*#__PURE__*/
-    React.createElement("div", { className: "mvd auth-shell" }, /*#__PURE__*/
-    React.createElement(StyleTag, null), /*#__PURE__*/
-    React.createElement("div", { className: "auth-brand" }, /*#__PURE__*/React.createElement(LogoMark, { size: 42 }), /*#__PURE__*/React.createElement("span", null, "MARQUEE")), /*#__PURE__*/
-    React.createElement("form", { className: "auth-card", onSubmit: save }, /*#__PURE__*/
-    React.createElement("div", { className: "eyebrow" }, "Invitation accepted"), /*#__PURE__*/
-    React.createElement("h1", null, "Create your password"), /*#__PURE__*/
-    React.createElement("p", null, "Finish setting up your account to enter Marquee."), /*#__PURE__*/
-    React.createElement("label", { className: "field" }, /*#__PURE__*/
-    React.createElement("span", null, "New password"), /*#__PURE__*/
-    React.createElement("input", { type: "password", autoComplete: "new-password", value: password, onChange: (e) => setPassword(e.target.value) })
-    ), /*#__PURE__*/
-    React.createElement("label", { className: "field" }, /*#__PURE__*/
-    React.createElement("span", null, "Confirm password"), /*#__PURE__*/
-    React.createElement("input", { type: "password", autoComplete: "new-password", value: confirm, onChange: (e) => setConfirm(e.target.value) })
-    ),
-    error && /*#__PURE__*/React.createElement("div", { className: "notice error" }, error), /*#__PURE__*/
-    React.createElement("button", { className: "btn-log auth-submit", disabled: busy || !password || !confirm },
-    busy ? "Saving…" : "Enter Marquee"
-    )
-    )
-    ));
-
+  return /*#__PURE__*/React.createElement("div", {
+    className: "mvd auth-shell"
+  }, /*#__PURE__*/React.createElement(StyleTag, null), /*#__PURE__*/React.createElement("div", {
+    className: "auth-brand"
+  }, /*#__PURE__*/React.createElement(LogoMark, {
+    size: 42
+  }), /*#__PURE__*/React.createElement("span", null, "MARQUEE")), /*#__PURE__*/React.createElement("form", {
+    className: "auth-card",
+    onSubmit: save
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "eyebrow"
+  }, "Invitation accepted"), /*#__PURE__*/React.createElement("h1", null, "Create your password"), /*#__PURE__*/React.createElement("p", null, "Finish setting up your account to enter Marquee."), /*#__PURE__*/React.createElement("label", {
+    className: "field"
+  }, /*#__PURE__*/React.createElement("span", null, "New password"), /*#__PURE__*/React.createElement("input", {
+    type: "password",
+    autoComplete: "new-password",
+    value: password,
+    onChange: e => setPassword(e.target.value)
+  })), /*#__PURE__*/React.createElement("label", {
+    className: "field"
+  }, /*#__PURE__*/React.createElement("span", null, "Confirm password"), /*#__PURE__*/React.createElement("input", {
+    type: "password",
+    autoComplete: "new-password",
+    value: confirm,
+    onChange: e => setConfirm(e.target.value)
+  })), error && /*#__PURE__*/React.createElement("div", {
+    className: "notice error"
+  }, error), /*#__PURE__*/React.createElement("button", {
+    className: "btn-log auth-submit",
+    disabled: busy || !password || !confirm
+  }, busy ? "Saving…" : "Enter Marquee")));
 }
-
 function AuthShell() {
   const [session, setSession] = useState(null);
   const [ready, setReady] = useState(false);
   const [needsPassword, setNeedsPassword] = useState(AUTH_URL_TYPE === "invite" || AUTH_URL_TYPE === "recovery");
-
   useEffect(() => {
-    APP_CLIENT.auth.getSession().then(({ data }) => {
+    APP_CLIENT.auth.getSession().then(({
+      data
+    }) => {
       setSession(data.session || null);
       setReady(true);
     });
-    const { data: listener } = APP_CLIENT.auth.onAuthStateChange((event, nextSession) => {
+    const {
+      data: listener
+    } = APP_CLIENT.auth.onAuthStateChange((event, nextSession) => {
       setSession(nextSession);
       if (event === "PASSWORD_RECOVERY") setNeedsPassword(true);
       setReady(true);
     });
     return () => listener.subscription.unsubscribe();
   }, []);
-
   const finishPassword = () => {
     setNeedsPassword(false);
     window.history.replaceState({}, document.title, window.location.pathname);
   };
-
   const signOut = async () => {
     await APP_CLIENT.auth.signOut();
     setSession(null);
   };
-
   if (!ready) {
-    return (/*#__PURE__*/
-      React.createElement("div", { className: "mvd" }, /*#__PURE__*/React.createElement(StyleTag, null), /*#__PURE__*/React.createElement("div", { className: "app-loader" }, /*#__PURE__*/React.createElement("span", null, "dimming the lights"))));
-
+    return /*#__PURE__*/React.createElement("div", {
+      className: "mvd"
+    }, /*#__PURE__*/React.createElement(StyleTag, null), /*#__PURE__*/React.createElement("div", {
+      className: "app-loader"
+    }, /*#__PURE__*/React.createElement("span", null, "dimming the lights")));
   }
-  if (session && needsPassword) return /*#__PURE__*/React.createElement(SetPasswordPage, { client: APP_CLIENT, onDone: finishPassword });
-  if (!session) return /*#__PURE__*/React.createElement(AuthPage, { client: APP_CLIENT });
-  return /*#__PURE__*/React.createElement(MovieDiary, { client: APP_CLIENT, user: session.user, onSignOut: signOut });
+  if (session && needsPassword) return /*#__PURE__*/React.createElement(SetPasswordPage, {
+    client: APP_CLIENT,
+    onDone: finishPassword
+  });
+  if (!session) return /*#__PURE__*/React.createElement(AuthPage, {
+    client: APP_CLIENT
+  });
+  return /*#__PURE__*/React.createElement(MovieDiary, {
+    client: APP_CLIENT,
+    user: session.user,
+    onSignOut: signOut
+  });
 }
 
 /* ---------------- styles ---------------- */
 
 function StyleTag() {
-  return (/*#__PURE__*/
-    React.createElement("style", null, `
+  return /*#__PURE__*/React.createElement("style", null, `
 .mvd {
   --bg: #000;
+  --app-bg: #000;
   --surface: #181b21;
   --surface-raised: #22262e;
   --accent: #8ecae6;
@@ -2262,7 +3107,7 @@ function StyleTag() {
 
   --body: 'Manrope', 'Segoe UI', system-ui, sans-serif;
 
-  background: var(--bg);
+  background: var(--app-bg);
   color: var(--text);
   font-family: var(--body);
   min-height: 100vh;
@@ -2270,6 +3115,21 @@ function StyleTag() {
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   animation: app-reveal .24s ease-out both;
+}
+.mvd[data-theme="noir"] {
+  --accent: #f4f4f2; --accent-muted: #b9b9b5; --surface: #161616; --surface-raised: #222;
+}
+.mvd[data-theme="curtain"] {
+  --accent: #e05252; --accent-muted: #9f3b3b; --surface: #1b1112; --surface-raised: #281719;
+  --app-bg: #030000;
+}
+.mvd[data-theme="dusk"] {
+  --accent: #b8a1ff; --accent-muted: #7f73c9; --surface: #171421; --surface-raised: #242033;
+  --app-bg: radial-gradient(circle at 82% 4%, rgba(85,150,255,.16), transparent 29rem), radial-gradient(circle at 10% 55%, rgba(184,161,255,.09), transparent 32rem), #05040a;
+}
+.mvd[data-theme="afterglow"] {
+  --accent: #ef9862; --accent-muted: #b56850; --surface: #1b1211; --surface-raised: #2a1a19;
+  --app-bg: radial-gradient(circle at 86% 8%, rgba(143,48,77,.18), transparent 30rem), radial-gradient(circle at 5% 65%, rgba(239,152,98,.08), transparent 34rem), #070302;
 }
 .mvd *, .mvd *::before, .mvd *::after { box-sizing: border-box; }
 .mvd button { font-family: inherit; cursor: pointer; }
@@ -2485,7 +3345,8 @@ function StyleTag() {
 .feed-head .btn-ghost { margin-bottom: 12px; }
 .feed-list { display: flex; flex-direction: column; max-width: 760px; }
 .feed-entry { padding: 22px 0 26px; border-bottom: 1px solid var(--line); }
-.feed-person { display: flex; align-items: center; gap: 11px; margin-bottom: 16px; }
+.feed-person { display: flex; align-items: center; gap: 11px; margin: 0 0 16px; padding: 0; background: none; border: none; color: inherit; text-align: left; }
+.feed-person:hover .feed-name { color: var(--accent); }
 .avatar {
   width: 34px; height: 34px; display: grid; place-items: center; flex-shrink: 0;
   background: var(--surface-raised); color: var(--accent); border: 1px solid var(--line);
@@ -2497,8 +3358,37 @@ function StyleTag() {
 .avatar.large { width: 72px; height: 72px; font-size: 22px; }
 .feed-name { color: var(--text); font-size: 13px; font-weight: 750; }
 .feed-action { color: var(--text-muted); font-size: 11px; }
+.feed-person .feed-name, .feed-person .feed-action { display: block; }
 .you-tag { color: var(--accent); font-size: 9px; letter-spacing: .08em; text-transform: uppercase; margin-left: 8px; }
 .feed-content { display: flex; gap: 18px; }
+.feed-switch { display: inline-flex; gap: 4px; border: 1px solid var(--line); padding: 3px; margin: -7px 0 18px; background: var(--surface); }
+.feed-switch button { border: none; background: transparent; color: var(--text-muted); padding: 8px 18px; font-size: 10px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+.feed-switch button.active { color: #0f151a; background: var(--accent); }
+.news-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }
+.news-card { display: grid; grid-template-columns: 150px minmax(0, 1fr); min-height: 190px; background: var(--surface); border: 1px solid var(--line); color: var(--text); text-decoration: none; overflow: hidden; }
+.news-card:hover { border-color: var(--accent); transform: translateY(-1px); }
+.news-card > img, .news-card-placeholder { width: 150px; height: 100%; min-height: 190px; object-fit: cover; background: var(--surface-raised); }
+.news-card-placeholder { display: grid; place-items: center; color: var(--accent); font-size: 10px; font-weight: 800; letter-spacing: .14em; }
+.news-card-copy { padding: 18px; }
+.news-source { color: var(--accent); font-size: 9px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
+.news-card h2 { font-size: 17px; line-height: 1.25; margin: 8px 0; }
+.news-card p { color: var(--text-muted); font-size: 12px; line-height: 1.5; margin: 0 0 14px; }
+.news-card-copy > span { color: var(--text-muted); font-size: 10px; }
+
+/* ---- member profiles ---- */
+.inline-loader { min-height: 55vh; }
+.member-hero { display: flex; align-items: center; gap: 26px; border-bottom: 1px solid var(--line); padding: 18px 0 28px; }
+.member-avatar { width: 104px; height: 104px; border-radius: 50%; font-size: 32px; display: grid; place-items: center; flex-shrink: 0; background: var(--surface-raised); color: var(--accent); border: 1px solid var(--line); overflow: hidden; }
+.member-avatar img { width: 100%; height: 100%; object-fit: cover; }
+.member-hero .page-head { margin: 2px 0 0; }
+.member-handle { color: var(--accent); font-size: 12px; margin-top: 4px; }
+.member-bio { max-width: 560px; margin: 10px 0 0; color: var(--text-muted); white-space: pre-wrap; }
+.profile-section-head { margin-top: 32px; }
+.member-top5 .marquee-poster { cursor: default; }
+.member-empty { cursor: default; }
+.profile-recent-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 14px; }
+.profile-recent-film img, .profile-recent-film .poster-blank { width: 100%; aspect-ratio: 2/3; object-fit: cover; }
+.profile-recent-film strong { display: block; font-size: 11px; line-height: 1.3; margin: 7px 0 3px; }
 .feed-poster { width: 92px; aspect-ratio: 2/3; flex-shrink: 0; background: var(--surface-raised); }
 .feed-poster img { width: 100%; height: 100%; object-fit: cover; }
 .feed-copy { min-width: 0; }
@@ -2622,6 +3512,7 @@ function StyleTag() {
 /* ---- lists ---- */
 .list-create { margin-bottom: 26px; }
 .list-create input { flex: 1; min-width: 220px; }
+.list-visibility { max-width: none; }
 .list-cards { display: flex; flex-direction: column; gap: 12px; }
 .list-card {
   display: flex; align-items: center; gap: 12px;
@@ -2632,6 +3523,9 @@ function StyleTag() {
 .list-covers { display: flex; }
 .list-covers img, .list-covers .thumb-blank { width: 34px; height: 51px; border-radius: 0; margin-right: -10px; border: 1px solid var(--bg); }
 .list-name { font-family: var(--body); font-weight: 700; font-size: 16px; }
+.shared-badge { display: inline-block; vertical-align: middle; color: var(--accent); border: 1px solid currentColor; padding: 2px 5px; margin-left: 6px; font-size: 8px; line-height: 1; letter-spacing: .1em; text-transform: uppercase; }
+.list-owner { color: var(--accent-muted); font-size: 10px; margin-top: 2px; }
+.shared-list-note { margin-top: -10px; }
 .list-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .list-head-actions { display: flex; gap: 8px; flex-shrink: 0; }
 .list-rows { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
@@ -2721,6 +3615,11 @@ function StyleTag() {
 .profile-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
 .profile-bio-field { grid-column: 1 / -1; }
 .profile-bio-field small { color: var(--text-muted); font-size: 10px; text-align: right; margin-top: 4px; }
+.theme-intro { margin-top: -10px; }
+.theme-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; max-width: 760px; }
+.theme-option { background: var(--surface); border: 1px solid var(--line); color: var(--text-muted); padding: 7px; text-align: left; font-size: 10px; font-weight: 700; }
+.theme-option.active { color: var(--text); border-color: var(--accent); box-shadow: inset 0 -2px 0 var(--accent); }
+.theme-preview { display: block; height: 42px; margin-bottom: 8px; border: 1px solid rgba(255,255,255,.12); }
 .account-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .tmdb-credit { max-width: 480px; }
 .tmdb-credit a { color: var(--accent); }
@@ -2778,7 +3677,21 @@ function StyleTag() {
   .feed-content { gap: 14px; }
   .feed-poster { width: 74px; }
   .feed-copy h2 { font-size: 17px; }
+  .news-grid { grid-template-columns: 1fr; }
+  .news-card { grid-template-columns: 104px minmax(0, 1fr); min-height: 150px; }
+  .news-card > img, .news-card-placeholder { width: 104px; min-height: 150px; }
+  .news-card-copy { padding: 14px; }
+  .news-card h2 { font-size: 15px; }
+  .news-card p { display: none; }
+  .member-hero { align-items: flex-start; gap: 16px; }
+  .member-avatar { width: 78px; height: 78px; font-size: 25px; }
+  .member-hero .page-head { font-size: 27px; }
+  .profile-recent-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .profile-fields { grid-template-columns: 1fr; }
+  .theme-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .list-create { align-items: stretch; }
+  .list-create input { min-width: 100%; }
+  .list-visibility { flex: 1; }
   .auth-shell { padding-top: 7vh; }
   .auth-card { padding: 24px 20px; }
 }
@@ -2786,12 +3699,11 @@ function StyleTag() {
   .mvd { animation: none; }
   .marquee-board { scroll-behavior: auto; }
 }
-    `));
-
+    `);
 }
-
 const root = ReactDOM.createRoot(document.getElementById("root"));
 root.render(/*#__PURE__*/React.createElement(AuthShell, null));
+
   </script>
 </body>
 
