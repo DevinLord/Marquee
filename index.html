@@ -6,6 +6,7 @@
   <meta name="viewport"
     content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>Marquee — a movie diary</title>
+  <meta name="marquee-build" content="2026.07.17-final-logo" />
   <meta name="description" content="A personal, single-user movie diary powered by TMDB." />
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" href="icons/favicon-32.png" sizes="32x32" />
@@ -25,9 +26,7 @@
     body {
       margin: 0;
       padding: 0;
-      background:
-        radial-gradient(ellipse 72% 28% at 50% 0%, rgba(142, 202, 230, .075), transparent 68%),
-        linear-gradient(180deg, #11141a 0%, #0f1115 48%);
+      background: #000;
       touch-action: manipulation;
       overscroll-behavior: none;
     }
@@ -50,22 +49,13 @@
       animation: boot-reveal .35s ease-out both;
     }
 
-    #boot-message svg {
-      animation: boot-breathe 1.25s ease-in-out infinite;
-    }
-
     @keyframes boot-reveal {
       from { opacity: 0; transform: translateY(5px); }
       to { opacity: 1; transform: translateY(0); }
     }
 
-    @keyframes boot-breathe {
-      0%, 100% { opacity: .72; transform: scale(.985); }
-      50% { opacity: 1; transform: scale(1); }
-    }
-
     @media (prefers-reduced-motion: reduce) {
-      #boot-message, #boot-message svg { animation: none; }
+      #boot-message { animation: none; }
     }
   </style>
 </head>
@@ -73,13 +63,7 @@
 <body>
   <div id="root">
     <div id="boot-message">
-      <svg width="44" height="42" viewBox="0 0 106 101" aria-hidden="true">
-        <path d="M0 1H18V101H0Z" fill="#8ecae6" />
-        <path d="M18 1L53 53L44 68L18 29Z" fill="#8ecae6" />
-        <path d="M88 1L53 53L62 68L88 29Z" fill="#8ecae6" />
-        <path d="M88 1H106V101H88Z" fill="#8ecae6" />
-      </svg>
-      <span>Opening Marquee…</span>
+      <span>dimming the lights</span>
     </div>
   </div>
 
@@ -353,11 +337,8 @@ function IconSearch() {
 
 function LogoMark({ size = 30 }) {
   return (/*#__PURE__*/
-    React.createElement("svg", { className: "logo-mark", width: size * 1.05, height: size, viewBox: "0 0 106 101", "aria-hidden": "true" }, /*#__PURE__*/
-    React.createElement("path", { d: "M0 1H18V101H0Z" }), /*#__PURE__*/
-    React.createElement("path", { d: "M18 1L53 53L44 68L18 29Z" }), /*#__PURE__*/
-    React.createElement("path", { d: "M88 1L53 53L62 68L88 29Z" }), /*#__PURE__*/
-    React.createElement("path", { d: "M88 1H106V101H88Z" })
+    React.createElement("svg", { className: "logo-mark", width: size * 1.06, height: size, viewBox: "0 0 527 498", "aria-hidden": "true" }, /*#__PURE__*/
+    React.createElement("path", { fillRule: "evenodd", d: "M0 249v249h52V120.6l.877.95.878.95 23.74 45 23.74 45 10.516 20 10.517 20L131 269l8.733 16.5 6.274 12 6.273 12 3.736 7 3.735 7 10.499 20 10.499 20 3.778 7.25 3.778 7.25H247v-.846l-3.891-7.327-3.892-7.327-23.723-45-23.724-45-6.022-11.5-6.022-11.5-4.244-8-4.243-8-24.75-47-24.75-47-8.72-16.5-8.72-16.5-6.789-13-6.789-13-8.982-17-8.982-17-4.741-9-4.741-9-6.787-13-6.787-13-.973-1.25L47.755 0H0zM98 .459v.459l14.108 26.791L126.216 54.5l5.269 10 5.269 10 15.473 29.5 15.473 29.5 7.287 14 7.287 14 3.238 6 3.238 6 6.001 11.5 6.001 11.5 9.743 18.5 9.743 18.5 6.02 11.5 6.019 11.5 10.503 20 10.503 20 9.734 18.5 9.734 18.5 5.752 11 5.752 11 5.955 11.25 5.956 11.25h42.577l5.761-11.25 5.761-11.25.716-1 .715-1 9.288-18 9.288-18 .723-1 .723-1 8.776-17 8.776-17 2.766-5 2.765-5 19.456-37 19.457-37 5.013-9.5 5.012-9.5 14.756-28 14.756-28 .875-.95.874-.95V498h52V0h-48.509l-4.103 7.75-4.104 7.75L438.036 77l-32.249 61.5-3.782 7-3.782 7-27.508 52.5-27.507 52.5-7.148 13.5-7.148 13.5-5.187 10.256-5.187 10.257-1.019-.335-1.019-.334-17.527-33.422-17.528-33.422L268.07 212l-13.376-25.5-3.211-6-3.211-6-30.74-58.5-30.74-58.5-5.595-10.5-5.595-10.5-6.838-13-6.839-13-2.671-5.25L156.583 0H98zM355.168 7.25l-3.971 7.25L326 62.5l-25.196 48-6.485 12.3-6.484 12.301 14.204 27.199 14.203 27.2.694.765.694.765 12.935-24.702 12.935-24.703 6.041-11.562 6.041-11.563 6.842-13 6.842-13 5.49-10.5 5.491-10.5 10.519-20 10.52-20 7.263-13.666 7.263-13.667.661-2.083.662-2.084H359.14zM421 323.815v.814l-6.34 11.936-6.339 11.935-6.575 12.5-6.575 12.5-12.586 23.877L370 421.254V498h52V323h-1zM105 411v87h52v-76.309l-8.872-17.095-8.872-17.096-9.257-17.5-9.257-17.5-7.455-14.25-7.456-14.25H105z" })
     ));
 
 }
@@ -397,8 +378,8 @@ function StarDisplay({ value, size = 15 }) {
       const fill = Math.max(0, Math.min(1, value - i));
       return (/*#__PURE__*/
         React.createElement("span", { className: "star-wrap", key: i, "aria-hidden": "true" }, /*#__PURE__*/
-        React.createElement("span", { className: "star-empty" }, "★"), /*#__PURE__*/
-        React.createElement("span", { className: "star-fill", style: { width: fill * 100 + "%" } }, "★")
+        React.createElement("span", { className: "star-empty" }, "\u2605"), /*#__PURE__*/
+        React.createElement("span", { className: "star-fill", style: { width: fill * 100 + "%" } }, "\u2605")
         ));
 
     })
@@ -438,8 +419,8 @@ function StarInput({ value, onChange, size = 26 }) {
       const fill = Math.max(0, Math.min(1, shown - i));
       return (/*#__PURE__*/
         React.createElement("span", { className: "star-wrap star-hit", key: i }, /*#__PURE__*/
-        React.createElement("span", { className: "star-empty", "aria-hidden": "true" }, "★"), /*#__PURE__*/
-        React.createElement("span", { className: "star-fill", "aria-hidden": "true", style: { width: fill * 100 + "%" } }, "★"), /*#__PURE__*/
+        React.createElement("span", { className: "star-empty", "aria-hidden": "true" }, "\u2605"), /*#__PURE__*/
+        React.createElement("span", { className: "star-fill", "aria-hidden": "true", style: { width: fill * 100 + "%" } }, "\u2605"), /*#__PURE__*/
         React.createElement("button", {
           type: "button",
           className: "half-hit left",
@@ -524,7 +505,7 @@ function FilmFacts({ tmdb, movieId, overview }) {
   return (/*#__PURE__*/
     React.createElement("div", { className: "film-facts" },
     plot && /*#__PURE__*/React.createElement("p", { className: "film-plot" }, plot),
-    loading && /*#__PURE__*/React.createElement("p", { className: "quiet-note" }, "Loading cast & crew…"),
+    loading && /*#__PURE__*/React.createElement("p", { className: "quiet-note" }, "Loading cast & crew\u2026"),
     error && /*#__PURE__*/React.createElement("div", { className: "notice error" }, error),
     !loading && !error && director && /*#__PURE__*/
     React.createElement("p", { className: "film-credit" }, /*#__PURE__*/React.createElement("span", { className: "film-credit-label" }, "Director"), " ", director.name),
@@ -677,12 +658,16 @@ function MovieDiary({ client, user, onSignOut }) {
       [id]: { title: movie.title, posterPath: movie.poster_path || null, releaseDate: movie.release_date || "" }
     });
   };
-  const saveProfile = async ({ username, displayName }) => {
+  const saveProfile = async ({ username, displayName, bio }) => {
     const cleanUsername = username.trim().toLowerCase().replace(/[^a-z0-9_]/g, "");
     if (cleanUsername.length < 3) return "Username must be at least 3 letters, numbers, or underscores.";
     const { data, error } = await client.
     from("profiles").
-    update({ username: cleanUsername, display_name: displayName.trim() || cleanUsername }).
+    update({
+      username: cleanUsername,
+      display_name: displayName.trim() || cleanUsername,
+      bio: bio.trim().slice(0, 160)
+    }).
     eq("id", user.id).
     select().
     single();
@@ -794,8 +779,7 @@ function MovieDiary({ client, user, onSignOut }) {
       React.createElement("div", { className: "mvd" }, /*#__PURE__*/
       React.createElement(StyleTag, null), /*#__PURE__*/
       React.createElement("div", { className: "app-loader" }, /*#__PURE__*/
-      React.createElement(LogoMark, { size: 44 }), /*#__PURE__*/
-      React.createElement("span", null, "Loading your films…")
+      React.createElement("span", null, "dimming the lights")
       )
       ));
 
@@ -1001,10 +985,10 @@ function Top5Strip({ top5, entries, onChange, onOpenMovie }) {
         React.createElement("div", { className: "marquee-title" }, e.title),
         editing && /*#__PURE__*/
         React.createElement("div", { className: "rank-controls" }, /*#__PURE__*/
-        React.createElement("button", { className: "icon-btn", onClick: () => move(idx, -1), disabled: idx === 0, "aria-label": "Move up in ranking" }, "←"), /*#__PURE__*/
-        React.createElement("button", { className: "icon-btn", onClick: () => move(idx, 1), disabled: idx === 4, "aria-label": "Move down in ranking" }, "→"), /*#__PURE__*/
+        React.createElement("button", { className: "icon-btn", onClick: () => move(idx, -1), disabled: idx === 0, "aria-label": "Move up in ranking" }, "\u2190"), /*#__PURE__*/
+        React.createElement("button", { className: "icon-btn", onClick: () => move(idx, 1), disabled: idx === 4, "aria-label": "Move down in ranking" }, "\u2192"), /*#__PURE__*/
         React.createElement("button", { className: "btn-ghost", onClick: () => setPickingSlot(idx), "aria-label": `Replace number ${idx + 1}` }, "Replace"), /*#__PURE__*/
-        React.createElement("button", { className: "icon-btn danger", onClick: () => setSlot(idx, null), "aria-label": `Clear number ${idx + 1}` }, "✕")
+        React.createElement("button", { className: "icon-btn danger", onClick: () => setSlot(idx, null), "aria-label": `Clear number ${idx + 1}` }, "\u2715")
         )
 
         ) : /*#__PURE__*/
@@ -1024,16 +1008,16 @@ function Top5Strip({ top5, entries, onChange, onOpenMovie }) {
     React.createElement("div", { className: "modal", role: "dialog", "aria-modal": "true", "aria-label": `Pick number ${pickingSlot + 1}` }, /*#__PURE__*/
     React.createElement("div", { className: "modal-head" }, /*#__PURE__*/
     React.createElement("h2", null, "Choose a film"), /*#__PURE__*/
-    React.createElement("button", { className: "btn-ghost", onClick: () => setPickingSlot(null), "aria-label": "Close" }, "✕")
+    React.createElement("button", { className: "btn-ghost", onClick: () => setPickingSlot(null), "aria-label": "Close" }, "\u2715")
     ),
     Object.keys(entries).length === 0 ? /*#__PURE__*/
-    React.createElement("p", { className: "quiet-note" }, "Log some movies first — the Top 5 draws from your films.") : /*#__PURE__*/
+    React.createElement("p", { className: "quiet-note" }, "Log some movies first \u2014 the Top 5 draws from your films.") : /*#__PURE__*/
 
     React.createElement(React.Fragment, null, /*#__PURE__*/
     React.createElement("input", {
       className: "search-big",
       type: "search",
-      placeholder: "Filter your films…",
+      placeholder: "Filter your films\u2026",
       value: filter,
       onChange: (e) => setFilter(e.target.value),
       autoFocus: true }
@@ -1145,7 +1129,7 @@ function FilmsPage({ entries, entryList, top5, onChangeTop5, openDetail, onLog }
     React.createElement("option", { value: "watched-asc" }, "Oldest"), /*#__PURE__*/
     React.createElement("option", { value: "rating-desc" }, "Highest rated"), /*#__PURE__*/
     React.createElement("option", { value: "rating-asc" }, "Lowest rated"), /*#__PURE__*/
-    React.createElement("option", { value: "title" }, "Title A–Z"), /*#__PURE__*/
+    React.createElement("option", { value: "title" }, "Title A\u2013Z"), /*#__PURE__*/
     React.createElement("option", { value: "year-desc" }, "Release year: newest"), /*#__PURE__*/
     React.createElement("option", { value: "year-asc" }, "Release year: oldest")
     ), /*#__PURE__*/
@@ -1166,12 +1150,12 @@ function FilmsPage({ entries, entryList, top5, onChangeTop5, openDetail, onLog }
     React.createElement("input", {
       ref: searchRef,
       type: "search",
-      placeholder: "Search your films…",
+      placeholder: "Search your films\u2026",
       value: query,
       onChange: (e) => setQuery(e.target.value),
       onBlur: () => {if (!query) setSearchOpen(false);} }
     ), /*#__PURE__*/
-    React.createElement("button", { className: "icon-btn", onClick: closeSearch, "aria-label": "Close search" }, "✕")
+    React.createElement("button", { className: "icon-btn", onClick: closeSearch, "aria-label": "Close search" }, "\u2715")
     ) : /*#__PURE__*/
 
     React.createElement("button", { className: "icon-btn", onClick: () => setSearchOpen(true), "aria-label": "Search your films" }, /*#__PURE__*/
@@ -1261,7 +1245,7 @@ function FeedPage({ client, currentUserId }) {
         person.display_name || person.username || "Marquee user",
         item.user_id === currentUserId && /*#__PURE__*/React.createElement("span", { className: "you-tag" }, "You")
         ), /*#__PURE__*/
-        React.createElement("div", { className: "feed-action" }, "logged a film · ", fmtDate(item.watched_date))
+        React.createElement("div", { className: "feed-action" }, "logged a film \xB7 ", fmtDate(item.watched_date))
         )
         ), /*#__PURE__*/
         React.createElement("div", { className: "feed-content" }, /*#__PURE__*/
@@ -1378,7 +1362,7 @@ function LogModal({ tmdb, existing, onClose, onSave }) {
     React.createElement("div", { className: "modal", role: "dialog", "aria-modal": "true", "aria-label": "Log a movie" }, /*#__PURE__*/
     React.createElement("div", { className: "modal-head" }, /*#__PURE__*/
     React.createElement("h2", null, picked ? "Movie details" : "Log a movie"), /*#__PURE__*/
-    React.createElement("button", { className: "btn-ghost", onClick: onClose, "aria-label": "Close" }, "✕")
+    React.createElement("button", { className: "btn-ghost", onClick: onClose, "aria-label": "Close" }, "\u2715")
     ),
 
     !picked && /*#__PURE__*/
@@ -1387,12 +1371,12 @@ function LogModal({ tmdb, existing, onClose, onSave }) {
       ref: inputRef,
       className: "search-big",
       type: "search",
-      placeholder: "Search TMDB by title…",
+      placeholder: "Search TMDB by title\u2026",
       value: query,
       onChange: (e) => setQuery(e.target.value) }
     ),
     error && /*#__PURE__*/React.createElement("div", { className: "notice error" }, error),
-    searching && /*#__PURE__*/React.createElement("div", { className: "quiet-note" }, "Searching…"), /*#__PURE__*/
+    searching && /*#__PURE__*/React.createElement("div", { className: "quiet-note" }, "Searching\u2026"), /*#__PURE__*/
     React.createElement("ul", { className: "results" },
     results.map((m) => /*#__PURE__*/
     React.createElement("li", { key: m.id }, /*#__PURE__*/
@@ -1435,7 +1419,7 @@ function LogModal({ tmdb, existing, onClose, onSave }) {
     posters === null && !loadingPosters && !postersError && /*#__PURE__*/
     React.createElement("button", { className: "btn-ghost poster-change-btn", onClick: loadPosters }, "Change poster"),
 
-    loadingPosters && /*#__PURE__*/React.createElement("p", { className: "quiet-note" }, "Loading posters…"),
+    loadingPosters && /*#__PURE__*/React.createElement("p", { className: "quiet-note" }, "Loading posters\u2026"),
     postersError && /*#__PURE__*/
     React.createElement("div", { className: "notice error" },
     postersError, " ", /*#__PURE__*/React.createElement("button", { className: "link", onClick: loadPosters }, "Retry")
@@ -1465,7 +1449,7 @@ function LogModal({ tmdb, existing, onClose, onSave }) {
     )
     ), /*#__PURE__*/
     React.createElement("div", { className: "row-end" }, /*#__PURE__*/
-    React.createElement("button", { className: "btn-ghost", onClick: () => setPicked(null) }, "← Back to search"), /*#__PURE__*/
+    React.createElement("button", { className: "btn-ghost", onClick: () => setPicked(null) }, "\u2190 Back to search"), /*#__PURE__*/
     React.createElement("button", { className: "btn-log", disabled: !rating, onClick: save },
     rating ? "Add to films" : "Pick a rating first"
     )
@@ -1475,7 +1459,7 @@ function LogModal({ tmdb, existing, onClose, onSave }) {
 
     posters && posters.length > 0 && /*#__PURE__*/
     React.createElement("div", { className: "poster-picker" }, /*#__PURE__*/
-    React.createElement("p", { className: "quiet-note" }, posters.length, " posters · click one to use it"), /*#__PURE__*/
+    React.createElement("p", { className: "quiet-note" }, posters.length, " posters \xB7 click one to use it"), /*#__PURE__*/
     React.createElement("div", { className: "poster-grid" },
     posters.map((p) => {
       const active = (selectedPoster || picked.poster_path) === p.file_path;
@@ -1534,7 +1518,7 @@ function DetailPage({ entry, tmdb, lists, onBack, onUpdate, onDelete, onAddToLis
 
   return (/*#__PURE__*/
     React.createElement("section", { className: "detail" }, /*#__PURE__*/
-    React.createElement("button", { className: "btn-ghost back", onClick: onBack }, "← Films"), /*#__PURE__*/
+    React.createElement("button", { className: "btn-ghost back", onClick: onBack }, "\u2190 Films"), /*#__PURE__*/
 
     React.createElement("div", { className: "detail-main" }, /*#__PURE__*/
     React.createElement("div", { className: "detail-poster" },
@@ -1595,7 +1579,7 @@ function DetailPage({ entry, tmdb, lists, onBack, onUpdate, onDelete, onAddToLis
     React.createElement("span", null, "Add to a list"), /*#__PURE__*/
     React.createElement("div", { className: "row" }, /*#__PURE__*/
     React.createElement("select", { value: listPick, onChange: (e) => setListPick(e.target.value) }, /*#__PURE__*/
-    React.createElement("option", { value: "" }, "Choose a list…"),
+    React.createElement("option", { value: "" }, "Choose a list\u2026"),
     lists.map((l) => /*#__PURE__*/
     React.createElement("option", { key: l.id, value: l.id, disabled: l.movieIds.includes(entry.id) },
     l.name, l.movieIds.includes(entry.id) ? " (already in)" : ""
@@ -1628,7 +1612,7 @@ function DetailPage({ entry, tmdb, lists, onBack, onUpdate, onDelete, onAddToLis
     posters === null && !loadingPosters && !postersError && /*#__PURE__*/
     React.createElement("button", { className: "btn-ghost", onClick: loadPosters }, "Change poster"),
 
-    loadingPosters && /*#__PURE__*/React.createElement("p", { className: "quiet-note" }, "Pulling posters…"),
+    loadingPosters && /*#__PURE__*/React.createElement("p", { className: "quiet-note" }, "Pulling posters\u2026"),
     postersError && /*#__PURE__*/
     React.createElement("div", { className: "notice error" },
     postersError, " ", /*#__PURE__*/React.createElement("button", { className: "link", onClick: loadPosters }, "Retry")
@@ -1637,7 +1621,7 @@ function DetailPage({ entry, tmdb, lists, onBack, onUpdate, onDelete, onAddToLis
     posters && posters.length === 0 && /*#__PURE__*/React.createElement("p", { className: "quiet-note" }, "TMDB has no alternate posters for this one."),
     posters && posters.length > 0 && /*#__PURE__*/
     React.createElement(React.Fragment, null, /*#__PURE__*/
-    React.createElement("p", { className: "quiet-note" }, posters.length, " posters · click one to make it this entry's poster"), /*#__PURE__*/
+    React.createElement("p", { className: "quiet-note" }, posters.length, " posters \xB7 click one to make it this entry's poster"), /*#__PURE__*/
     React.createElement("div", { className: "poster-grid" },
     posters.map((p) => {
       const active = (entry.chosenPoster || entry.posterPath) === p.file_path;
@@ -1674,7 +1658,7 @@ function ListsPage({ lists, entries, movieCache, onCreate, onOpen, onDelete }) {
     React.createElement("div", { className: "row list-create" }, /*#__PURE__*/
     React.createElement("input", {
       type: "text",
-      placeholder: "New list — e.g. Best of 2026",
+      placeholder: "New list \u2014 e.g. Best of 2026",
       value: name,
       onChange: (e) => setName(e.target.value),
       onKeyDown: (e) => {if (e.key === "Enter" && name.trim()) {onCreate(name.trim());setName("");}} }
@@ -1685,7 +1669,7 @@ function ListsPage({ lists, entries, movieCache, onCreate, onOpen, onDelete }) {
     ),
 
     lists.length === 0 && /*#__PURE__*/
-    React.createElement("p", { className: "quiet-note" }, "No lists yet. Make one for anything — a year's best, a rewatch pile, a director run."), /*#__PURE__*/
+    React.createElement("p", { className: "quiet-note" }, "No lists yet. Make one for anything \u2014 a year's best, a rewatch pile, a director run."), /*#__PURE__*/
 
 
     React.createElement("div", { className: "list-cards" },
@@ -1715,7 +1699,7 @@ function ListsPage({ lists, entries, movieCache, onCreate, onOpen, onDelete }) {
         React.createElement("button", { className: "btn-ghost", onClick: () => setConfirm(null) }, "Keep")
         ) : /*#__PURE__*/
 
-        React.createElement("button", { className: "btn-ghost danger", onClick: () => setConfirm(l.id), "aria-label": `Delete list ${l.name}` }, "✕")
+        React.createElement("button", { className: "btn-ghost danger", onClick: () => setConfirm(l.id), "aria-label": `Delete list ${l.name}` }, "\u2715")
 
         ));
 
@@ -1791,7 +1775,7 @@ function ListDetail({ list, entries, movieCache, tmdb, onCacheMovie, onBack, onO
 
   return (/*#__PURE__*/
     React.createElement("section", null, /*#__PURE__*/
-    React.createElement("button", { className: "btn-ghost back", onClick: onBack }, "← Lists"),
+    React.createElement("button", { className: "btn-ghost back", onClick: onBack }, "\u2190 Lists"),
     renaming ? /*#__PURE__*/
     React.createElement("div", { className: "row" }, /*#__PURE__*/
     React.createElement("input", { type: "text", value: nameDraft, onChange: (e) => setNameDraft(e.target.value), autoFocus: true }), /*#__PURE__*/
@@ -1829,13 +1813,13 @@ function ListDetail({ list, entries, movieCache, tmdb, onCacheMovie, onBack, onO
         m.logged ? /*#__PURE__*/React.createElement(StarDisplay, { value: entries[id].rating, size: 12 }) : /*#__PURE__*/React.createElement("span", { className: "result-flag" }, "not logged")
         ), /*#__PURE__*/
         React.createElement("div", { className: "row-btns" }, /*#__PURE__*/
-        React.createElement("button", { className: "btn-ghost", onClick: () => move(idx, -1), disabled: idx === 0, "aria-label": `Move ${m.title} up` }, "↑"), /*#__PURE__*/
-        React.createElement("button", { className: "btn-ghost", onClick: () => move(idx, 1), disabled: idx === list.movieIds.length - 1, "aria-label": `Move ${m.title} down` }, "↓"), /*#__PURE__*/
+        React.createElement("button", { className: "btn-ghost", onClick: () => move(idx, -1), disabled: idx === 0, "aria-label": `Move ${m.title} up` }, "\u2191"), /*#__PURE__*/
+        React.createElement("button", { className: "btn-ghost", onClick: () => move(idx, 1), disabled: idx === list.movieIds.length - 1, "aria-label": `Move ${m.title} down` }, "\u2193"), /*#__PURE__*/
         React.createElement("button", {
           className: "btn-ghost danger",
           "aria-label": `Remove ${m.title} from list`,
           onClick: () => onUpdate({ movieIds: list.movieIds.filter((x) => x !== id) }) },
-        "✕")
+        "\u2715")
         )
         ));
 
@@ -1846,19 +1830,19 @@ function ListDetail({ list, entries, movieCache, tmdb, onCacheMovie, onBack, onO
     React.createElement("div", { className: "overlay", onMouseDown: (e) => e.target === e.currentTarget && closeAdding() }, /*#__PURE__*/
     React.createElement("div", { className: "modal", role: "dialog", "aria-modal": "true", "aria-label": "Add films to list" }, /*#__PURE__*/
     React.createElement("div", { className: "modal-head" }, /*#__PURE__*/
-    React.createElement("h2", null, "Add to “", list.name, "”"), /*#__PURE__*/
-    React.createElement("button", { className: "btn-ghost", onClick: closeAdding, "aria-label": "Close" }, "✕")
+    React.createElement("h2", null, "Add to \u201C", list.name, "\u201D"), /*#__PURE__*/
+    React.createElement("button", { className: "btn-ghost", onClick: closeAdding, "aria-label": "Close" }, "\u2715")
     ), /*#__PURE__*/
     React.createElement("input", {
       ref: searchRef,
       className: "search-big",
       type: "search",
-      placeholder: "Search TMDB by title…",
+      placeholder: "Search TMDB by title\u2026",
       value: query,
       onChange: (e) => setQuery(e.target.value) }
     ),
     searchError && /*#__PURE__*/React.createElement("div", { className: "notice error" }, searchError),
-    searching && /*#__PURE__*/React.createElement("div", { className: "quiet-note" }, "Searching…"), /*#__PURE__*/
+    searching && /*#__PURE__*/React.createElement("div", { className: "quiet-note" }, "Searching\u2026"), /*#__PURE__*/
     React.createElement("ul", { className: "results" },
     results.map((r) => {
       const already = list.movieIds.includes(String(r.id));
@@ -1998,6 +1982,7 @@ function StatsPage({ entries }) {
 function SettingsPage({ profile, email, onSaveProfile, onUploadAvatar, onImportLegacy, onSignOut, onOpenStats }) {
   const [username, setUsername] = useState(profile ? profile.username : "");
   const [displayName, setDisplayName] = useState(profile ? profile.display_name : "");
+  const [bio, setBio] = useState(profile && profile.bio ? profile.bio : "");
   const [profileError, setProfileError] = useState(null);
   const [savingProfile, setSavingProfile] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
@@ -2008,12 +1993,13 @@ function SettingsPage({ profile, email, onSaveProfile, onUploadAvatar, onImportL
   useEffect(() => {
     setUsername(profile ? profile.username : "");
     setDisplayName(profile ? profile.display_name : "");
+    setBio(profile && profile.bio ? profile.bio : "");
   }, [profile]);
 
   const saveProfile = async () => {
     setSavingProfile(true);
     setProfileError(null);
-    const error = await onSaveProfile({ username, displayName });
+    const error = await onSaveProfile({ username, displayName, bio });
     setProfileError(error);
     setSavingProfile(false);
   };
@@ -2050,7 +2036,8 @@ function SettingsPage({ profile, email, onSaveProfile, onUploadAvatar, onImportL
     ), /*#__PURE__*/
     React.createElement("div", { className: "profile-summary-copy" }, /*#__PURE__*/
     React.createElement("div", { className: "profile-summary-name" }, profile ? profile.display_name : "Marquee user"), /*#__PURE__*/
-    React.createElement("div", { className: "quiet-note" }, email), /*#__PURE__*/
+    React.createElement("div", { className: "quiet-note" }, email),
+    profile && profile.bio && /*#__PURE__*/React.createElement("p", { className: "profile-bio-copy" }, profile.bio), /*#__PURE__*/
     React.createElement("label", { className: "btn-ghost avatar-upload" + (uploadingAvatar ? " disabled" : "") },
     uploadingAvatar ? "Uploading…" : profile && profile.avatar_url ? "Change picture" : "Add picture", /*#__PURE__*/
     React.createElement("input", { type: "file", accept: "image/jpeg,image/png,image/webp", onChange: chooseAvatar, disabled: uploadingAvatar })
@@ -2074,6 +2061,17 @@ function SettingsPage({ profile, email, onSaveProfile, onUploadAvatar, onImportL
       autoCapitalize: "none",
       spellCheck: false }
     )
+    ), /*#__PURE__*/
+    React.createElement("label", { className: "field profile-bio-field" }, /*#__PURE__*/
+    React.createElement("span", null, "Bio"), /*#__PURE__*/
+    React.createElement("textarea", {
+      value: bio,
+      onChange: (e) => setBio(e.target.value.slice(0, 160)),
+      rows: 3,
+      maxLength: 160,
+      placeholder: "A sentence or two about your taste in movies." }
+    ), /*#__PURE__*/
+    React.createElement("small", null, bio.length, "/160")
     )
     ), /*#__PURE__*/
     React.createElement("button", { className: "btn-log", onClick: saveProfile, disabled: savingProfile || !username.trim() },
@@ -2238,7 +2236,7 @@ function AuthShell() {
 
   if (!ready) {
     return (/*#__PURE__*/
-      React.createElement("div", { className: "mvd" }, /*#__PURE__*/React.createElement(StyleTag, null), /*#__PURE__*/React.createElement("div", { className: "app-loader" }, /*#__PURE__*/React.createElement(LogoMark, { size: 44 }), /*#__PURE__*/React.createElement("span", null, "Checking your account…"))));
+      React.createElement("div", { className: "mvd" }, /*#__PURE__*/React.createElement(StyleTag, null), /*#__PURE__*/React.createElement("div", { className: "app-loader" }, /*#__PURE__*/React.createElement("span", null, "dimming the lights"))));
 
   }
   if (session && needsPassword) return /*#__PURE__*/React.createElement(SetPasswordPage, { client: APP_CLIENT, onDone: finishPassword });
@@ -2252,7 +2250,7 @@ function StyleTag() {
   return (/*#__PURE__*/
     React.createElement("style", null, `
 .mvd {
-  --bg: #0f1115;
+  --bg: #000;
   --surface: #181b21;
   --surface-raised: #22262e;
   --accent: #8ecae6;
@@ -2264,9 +2262,7 @@ function StyleTag() {
 
   --body: 'Manrope', 'Segoe UI', system-ui, sans-serif;
 
-  background:
-    radial-gradient(ellipse 72% 28% at 50% 0%, rgba(142,202,230,.075), transparent 68%),
-    linear-gradient(180deg, #11141a 0%, var(--bg) 48%);
+  background: var(--bg);
   color: var(--text);
   font-family: var(--body);
   min-height: 100vh;
@@ -2305,7 +2301,10 @@ function StyleTag() {
   letter-spacing: .1em; text-transform: uppercase;
 }
 .desktop-nav button:hover { color: var(--text); }
-.desktop-nav button.active { color: var(--text); border-bottom-color: var(--accent); }
+.desktop-nav button.active {
+  color: var(--accent); border-bottom-color: var(--accent);
+  background: rgba(142,202,230,.07);
+}
 .desktop-nav .desktop-log {
   align-self: center; background: var(--accent); color: #0f151a;
   border: none; padding: 9px 17px;
@@ -2329,7 +2328,11 @@ function StyleTag() {
 }
 .tab-link .tab-label { font-size: 10px; letter-spacing: .1em; font-weight: 700; text-transform: uppercase; }
 .tab-link:hover { color: var(--text); }
-.tab-link.active { color: var(--accent); }
+.tab-link.active {
+  color: var(--accent);
+  background: rgba(142,202,230,.12);
+  box-shadow: inset 0 2px 0 var(--accent);
+}
 .tab-link-log {
   background: var(--accent); color: #0f151a; border: none;
   width: 58px; height: 38px; border-radius: 0; flex-shrink: 0;
@@ -2365,14 +2368,9 @@ function StyleTag() {
   min-height: 100dvh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
   font-family: var(--body); font-weight: 600; letter-spacing: .06em; color: var(--text-muted);
 }
-.app-loader .logo-mark { animation: app-loader-breathe 1.25s ease-in-out infinite; }
 @keyframes app-reveal {
   from { opacity: 0; }
   to { opacity: 1; }
-}
-@keyframes app-loader-breathe {
-  0%, 100% { opacity: .72; transform: scale(.985); }
-  50% { opacity: 1; transform: scale(1); }
 }
 
 /* ---- headings ---- */
@@ -2408,7 +2406,11 @@ function StyleTag() {
   letter-spacing: .1em; text-transform: uppercase;
   padding: 4px 0 11px; border-radius: 0;
 }
-.top-tab.active { color: var(--text); border-bottom-color: var(--accent); }
+.top-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  background: linear-gradient(180deg, transparent 55%, rgba(142,202,230,.10));
+}
 .top-tab:hover:not(.active) { color: var(--text); }
 
 /* ---- top 5 strip (Films tab) ---- */
@@ -2488,6 +2490,7 @@ function StyleTag() {
   width: 34px; height: 34px; display: grid; place-items: center; flex-shrink: 0;
   background: var(--surface-raised); color: var(--accent); border: 1px solid var(--line);
   font-size: 12px; font-weight: 800;
+  border-radius: 50%;
 }
 .avatar.has-image { overflow: hidden; }
 .avatar img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -2711,10 +2714,13 @@ function StyleTag() {
 .profile-summary { display: flex; align-items: center; gap: 14px; padding-bottom: 22px; border-bottom: 1px solid var(--line); margin-bottom: 22px; }
 .profile-summary-copy { min-width: 0; }
 .profile-summary-name { font-size: 17px; font-weight: 750; }
+.profile-bio-copy { max-width: 390px; margin: 8px 0 0; color: var(--text); font-size: 13px; line-height: 1.55; white-space: pre-wrap; }
 .avatar-upload { display: inline-flex; margin-top: 10px; cursor: pointer; }
 .avatar-upload input { display: none; }
 .avatar-upload.disabled { opacity: .55; pointer-events: none; }
 .profile-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 14px; }
+.profile-bio-field { grid-column: 1 / -1; }
+.profile-bio-field small { color: var(--text-muted); font-size: 10px; text-align: right; margin-top: 4px; }
 .account-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .tmdb-credit { max-width: 480px; }
 .tmdb-credit a { color: var(--accent); }
@@ -2777,7 +2783,7 @@ function StyleTag() {
   .auth-card { padding: 24px 20px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .mvd, .app-loader .logo-mark { animation: none; }
+  .mvd { animation: none; }
   .marquee-board { scroll-behavior: auto; }
 }
     `));
