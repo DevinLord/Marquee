@@ -6,7 +6,7 @@
   <meta name="viewport"
     content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>Marquee — a movie diary</title>
-  <meta name="marquee-build" content="2026.07.17-phase2" />
+  <meta name="marquee-build" content="2026.07.17-selected-members-final" />
   <meta name="description" content="A personal, single-user movie diary powered by TMDB." />
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" href="icons/favicon-32.png" sizes="32x32" />
@@ -63,7 +63,7 @@
 <body>
   <div id="root">
     <div id="boot-message">
-      <span>Dimming the lights</span>
+      <span>dimming the lights</span>
     </div>
   </div>
 
@@ -731,6 +731,7 @@ function MovieDiary({
   const [top5, setTop5] = useState([null, null, null, null, null]);
   const [profile, setProfile] = useState(null);
   const [sharedLists, setSharedLists] = useState([]);
+  const [circleMembers, setCircleMembers] = useState([]);
   const [view, setView] = useState({
     name: "feed"
   });
@@ -786,16 +787,24 @@ function MovieDiary({
     setLoaded(true);
   }, [client, user.id]);
   const loadSharedLists = useCallback(async () => {
+    const [listResult, memberResult] = await Promise.all([client.from("shared_lists").select(`
+          *,
+          profiles!shared_lists_owner_id_fkey (username, display_name, avatar_url),
+          shared_list_items (*),
+          shared_list_members (
+            user_id,
+            can_edit,
+            profiles!shared_list_members_user_id_fkey (username, display_name, avatar_url)
+          )
+        `).order("created_at", {
+      ascending: false
+    }), client.from("profiles").select("id, username, display_name, avatar_url").neq("id", user.id).order("display_name", {
+      ascending: true
+    })]);
     const {
       data,
       error
-    } = await client.from("shared_lists").select(`
-        *,
-        profiles!shared_lists_owner_id_fkey (username, display_name, avatar_url),
-        shared_list_items (*)
-      `).order("created_at", {
-      ascending: false
-    });
+    } = listResult;
     if (error) {
       if (!/does not exist|schema cache/i.test(error.message || "")) {
         notify("Shared lists couldn't be refreshed.");
@@ -808,10 +817,12 @@ function MovieDiary({
         ...list,
         shared: true,
         movieIds: items.map(item => String(item.tmdb_id)),
-        items
+        items,
+        members: list.shared_list_members || []
       };
     }));
-  }, [client]);
+    if (!memberResult.error) setCircleMembers(memberResult.data || []);
+  }, [client, user.id]);
   useEffect(() => {
     loadAccountData();
     loadSharedLists();
@@ -855,16 +866,54 @@ function MovieDiary({
       lists: next
     });
   };
-  const createSharedList = async name => {
+  const createSharedList = async (name, memberIds) => {
     const {
+      data,
       error
     } = await client.from("shared_lists").insert({
       owner_id: user.id,
       name: name.trim()
-    });
+    }).select().single();
     if (error) return notify(`Couldn't create shared list: ${error.message}`);
+    if (memberIds.length) {
+      const {
+        error: memberError
+      } = await client.from("shared_list_members").insert(memberIds.map(memberId => ({
+        list_id: data.id,
+        user_id: memberId,
+        can_edit: true
+      })));
+      if (memberError) {
+        await client.from("shared_lists").delete().eq("id", data.id);
+        return notify(`Couldn't share the list: ${memberError.message}`);
+      }
+    }
     await loadSharedLists();
     notify("Shared list created.");
+  };
+  const updateSharedListMembers = async (list, memberIds) => {
+    if (!list || list.owner_id !== user.id) return;
+    const existingIds = (list.members || []).map(member => member.user_id);
+    const removed = existingIds.filter(memberId => !memberIds.includes(memberId));
+    const added = memberIds.filter(memberId => !existingIds.includes(memberId));
+    if (removed.length) {
+      const {
+        error: deleteError
+      } = await client.from("shared_list_members").delete().eq("list_id", list.id).in("user_id", removed);
+      if (deleteError) return notify(`Couldn't update access: ${deleteError.message}`);
+    }
+    if (added.length) {
+      const {
+        error: insertError
+      } = await client.from("shared_list_members").insert(added.map(memberId => ({
+        list_id: list.id,
+        user_id: memberId,
+        can_edit: true
+      })));
+      if (insertError) return notify(`Couldn't update access: ${insertError.message}`);
+    }
+    await loadSharedLists();
+    notify("List access updated.");
   };
   const deleteSharedList = async id => {
     const {
@@ -1123,7 +1172,7 @@ function MovieDiary({
       className: "mvd"
     }, /*#__PURE__*/React.createElement(StyleTag, null), /*#__PURE__*/React.createElement("div", {
       className: "app-loader"
-    }, /*#__PURE__*/React.createElement("span", null, "Dimming the lights")));
+    }, /*#__PURE__*/React.createElement("span", null, "dimming the lights")));
   }
   return /*#__PURE__*/React.createElement("div", {
     className: "mvd",
@@ -1220,7 +1269,8 @@ function MovieDiary({
       ...sharedMovieCache
     },
     currentUserId: user.id,
-    onCreate: (name, shared) => shared ? createSharedList(name) : persistLists([...lists, {
+    circleMembers: circleMembers,
+    onCreate: (name, shared, memberIds) => shared ? createSharedList(name, memberIds) : persistLists([...lists, {
       id: uid(),
       name,
       movieIds: []
@@ -1240,6 +1290,11 @@ function MovieDiary({
     tmdb: tmdb,
     onCacheMovie: cacheMovie,
     currentUserId: user.id,
+    circleMembers: circleMembers,
+    onUpdateMembers: memberIds => {
+      const target = sharedLists.find(list => list.id === view.id);
+      return updateSharedListMembers(target, memberIds);
+    },
     onBack: () => setView({
       name: "lists"
     }),
@@ -2289,12 +2344,14 @@ function ListsPage({
   entries,
   movieCache,
   currentUserId,
+  circleMembers,
   onCreate,
   onOpen,
   onDelete
 }) {
   const [name, setName] = useState("");
   const [visibility, setVisibility] = useState("private");
+  const [selectedMembers, setSelectedMembers] = useState([]);
   const [confirm, setConfirm] = useState(null);
   const allLists = [...lists.map(list => ({
     ...list,
@@ -2305,8 +2362,10 @@ function ListsPage({
   }))];
   const create = () => {
     if (!name.trim()) return;
-    onCreate(name.trim(), visibility === "shared");
+    if (visibility === "shared" && selectedMembers.length === 0) return;
+    onCreate(name.trim(), visibility === "shared", selectedMembers);
     setName("");
+    setSelectedMembers([]);
   };
   return /*#__PURE__*/React.createElement("section", null, /*#__PURE__*/React.createElement("h1", {
     className: "page-head"
@@ -2329,11 +2388,33 @@ function ListsPage({
     value: "private"
   }, "Private"), /*#__PURE__*/React.createElement("option", {
     value: "shared"
-  }, "Shared with circle")), /*#__PURE__*/React.createElement("button", {
+  }, "Shared with selected people")), /*#__PURE__*/React.createElement("button", {
     className: "btn-log",
-    disabled: !name.trim(),
+    disabled: !name.trim() || visibility === "shared" && selectedMembers.length === 0,
     onClick: create
-  }, "Create list")), allLists.length === 0 && /*#__PURE__*/React.createElement("p", {
+  }, "Create list")), visibility === "shared" && /*#__PURE__*/React.createElement("div", {
+    className: "member-picker create-member-picker"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "field-label"
+  }, "Who can access this list?"), circleMembers.length ? circleMembers.map(member => {
+    const selected = selectedMembers.includes(member.id);
+    return /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "member-choice" + (selected ? " selected" : ""),
+      key: member.id,
+      "aria-pressed": selected,
+      onClick: () => setSelectedMembers(current => selected ? current.filter(id => id !== member.id) : [...current, member.id])
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "avatar mini" + (member.avatar_url ? " has-image" : "")
+    }, member.avatar_url ? /*#__PURE__*/React.createElement("img", {
+      src: member.avatar_url,
+      alt: ""
+    }) : (member.display_name || member.username || "?").slice(0, 1).toUpperCase()), /*#__PURE__*/React.createElement("span", null, member.display_name || member.username));
+  }) : /*#__PURE__*/React.createElement("p", {
+    className: "quiet-note"
+  }, "Invite another member before creating a shared list."), circleMembers.length > 0 && selectedMembers.length === 0 && /*#__PURE__*/React.createElement("p", {
+    className: "quiet-note member-picker-note"
+  }, "Choose at least one person.")), allLists.length === 0 && /*#__PURE__*/React.createElement("p", {
     className: "quiet-note"
   }, "No lists yet. Make one for anything — a year's best, a rewatch pile, a director run."), /*#__PURE__*/React.createElement("div", {
     className: "list-cards"
@@ -2368,7 +2449,7 @@ function ListsPage({
       className: "quiet-note"
     }, l.movieIds.length, " ", l.movieIds.length === 1 ? "movie" : "movies"), l.shared && /*#__PURE__*/React.createElement("div", {
       className: "list-owner"
-    }, "Started by ", owner.display_name || owner.username || "a Marquee member"))), canDelete && confirm === l.id ? /*#__PURE__*/React.createElement("div", {
+    }, "Started by ", owner.display_name || owner.username || "a Marquee member", " · ", (l.members || []).length, " shared ", (l.members || []).length === 1 ? "member" : "members"))), canDelete && confirm === l.id ? /*#__PURE__*/React.createElement("div", {
       className: "row"
     }, /*#__PURE__*/React.createElement("button", {
       className: "btn-danger",
@@ -2393,6 +2474,8 @@ function ListDetail({
   tmdb,
   onCacheMovie,
   currentUserId,
+  circleMembers,
+  onUpdateMembers,
   onBack,
   onOpenMovie,
   onUpdate
@@ -2404,11 +2487,16 @@ function ListDetail({
   const [results, setResults] = useState([]);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState(null);
+  const [accessOpen, setAccessOpen] = useState(false);
+  const [memberDraft, setMemberDraft] = useState([]);
   const searchRef = useRef(null);
   const timer = useRef(null);
   useEffect(() => {
     if (adding && searchRef.current) searchRef.current.focus();
   }, [adding]);
+  useEffect(() => {
+    setMemberDraft((list && list.members ? list.members : []).map(member => member.user_id));
+  }, [list]);
   useEffect(() => {
     if (!adding) return;
     window.clearTimeout(timer.current);
@@ -2494,13 +2582,16 @@ function ListDetail({
       setRenaming(true);
     },
     "aria-label": "Rename list"
-  }, /*#__PURE__*/React.createElement(IconEdit, null)), /*#__PURE__*/React.createElement("button", {
+  }, /*#__PURE__*/React.createElement(IconEdit, null)), list.shared && list.owner_id === currentUserId && /*#__PURE__*/React.createElement("button", {
+    className: "btn-ghost list-access-button",
+    onClick: () => setAccessOpen(true)
+  }, "Access"), /*#__PURE__*/React.createElement("button", {
     className: "icon-btn",
     onClick: () => setAdding(true),
     "aria-label": "Add films to this list"
   }, /*#__PURE__*/React.createElement(IconPlus, null)))), list.shared && /*#__PURE__*/React.createElement("p", {
     className: "quiet-note shared-list-note"
-  }, "Everyone in your Marquee circle can add, remove, and reorder films in this list."), list.movieIds.length === 0 && /*#__PURE__*/React.createElement("p", {
+  }, "Shared with ", (list.members || []).map(member => member.profiles && (member.profiles.display_name || member.profiles.username)).filter(Boolean).join(", ") || "no one yet", ". Members can add, remove, and reorder films."), list.movieIds.length === 0 && /*#__PURE__*/React.createElement("p", {
     className: "quiet-note"
   }, "Empty so far. Tap + above to search for and add any film."), /*#__PURE__*/React.createElement("ol", {
     className: "list-rows"
@@ -2550,7 +2641,49 @@ function ListDetail({
         movieIds: list.movieIds.filter(x => x !== id)
       })
     }, "✕")));
-  })), adding && /*#__PURE__*/React.createElement("div", {
+  })), accessOpen && /*#__PURE__*/React.createElement("div", {
+    className: "overlay",
+    onMouseDown: event => event.target === event.currentTarget && setAccessOpen(false)
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "modal access-modal",
+    role: "dialog",
+    "aria-modal": "true",
+    "aria-label": "Manage list access"
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "modal-head"
+  }, /*#__PURE__*/React.createElement("h2", null, "Manage access"), /*#__PURE__*/React.createElement("button", {
+    className: "btn-ghost",
+    onClick: () => setAccessOpen(false)
+  }, "✕")), /*#__PURE__*/React.createElement("p", {
+    className: "quiet-note"
+  }, "Only selected members can see and edit this list."), /*#__PURE__*/React.createElement("div", {
+    className: "member-picker"
+  }, circleMembers.map(member => {
+    const selected = memberDraft.includes(member.id);
+    return /*#__PURE__*/React.createElement("button", {
+      type: "button",
+      className: "member-choice" + (selected ? " selected" : ""),
+      key: member.id,
+      "aria-pressed": selected,
+      onClick: () => setMemberDraft(current => selected ? current.filter(id => id !== member.id) : [...current, member.id])
+    }, /*#__PURE__*/React.createElement("span", {
+      className: "avatar mini" + (member.avatar_url ? " has-image" : "")
+    }, member.avatar_url ? /*#__PURE__*/React.createElement("img", {
+      src: member.avatar_url,
+      alt: ""
+    }) : (member.display_name || member.username || "?").slice(0, 1).toUpperCase()), /*#__PURE__*/React.createElement("span", null, member.display_name || member.username));
+  })), /*#__PURE__*/React.createElement("div", {
+    className: "row access-actions"
+  }, /*#__PURE__*/React.createElement("button", {
+    className: "btn-log",
+    onClick: async () => {
+      await onUpdateMembers(memberDraft);
+      setAccessOpen(false);
+    }
+  }, "Save access"), /*#__PURE__*/React.createElement("button", {
+    className: "btn-ghost",
+    onClick: () => setAccessOpen(false)
+  }, "Cancel")))), adding && /*#__PURE__*/React.createElement("div", {
     className: "overlay",
     onMouseDown: e => e.target === e.currentTarget && closeAdding()
   }, /*#__PURE__*/React.createElement("div", {
@@ -3073,7 +3206,7 @@ function AuthShell() {
       className: "mvd"
     }, /*#__PURE__*/React.createElement(StyleTag, null), /*#__PURE__*/React.createElement("div", {
       className: "app-loader"
-    }, /*#__PURE__*/React.createElement("span", null, "Dimming the lights")));
+    }, /*#__PURE__*/React.createElement("span", null, "dimming the lights")));
   }
   if (session && needsPassword) return /*#__PURE__*/React.createElement(SetPasswordPage, {
     client: APP_CLIENT,
@@ -3513,6 +3646,13 @@ function StyleTag() {
 .list-create { margin-bottom: 26px; }
 .list-create input { flex: 1; min-width: 220px; }
 .list-visibility { max-width: none; }
+.create-member-picker { margin: -15px 0 24px; }
+.field-label { color: var(--text-muted); font-size: 9px; font-weight: 800; letter-spacing: .11em; text-transform: uppercase; margin-bottom: 8px; }
+.member-picker { display: flex; flex-wrap: wrap; gap: 8px; }
+.member-choice { display: inline-flex; align-items: center; gap: 8px; background: var(--surface); border: 1px solid var(--line); color: var(--text-muted); padding: 6px 10px 6px 6px; font-size: 11px; }
+.member-choice.selected { border-color: var(--accent); color: var(--text); background: color-mix(in srgb, var(--accent) 12%, var(--surface)); }
+.avatar.mini { width: 24px; height: 24px; font-size: 9px; }
+.member-picker-note { width: 100%; margin: 2px 0 0; }
 .list-cards { display: flex; flex-direction: column; gap: 12px; }
 .list-card {
   display: flex; align-items: center; gap: 12px;
@@ -3526,6 +3666,9 @@ function StyleTag() {
 .shared-badge { display: inline-block; vertical-align: middle; color: var(--accent); border: 1px solid currentColor; padding: 2px 5px; margin-left: 6px; font-size: 8px; line-height: 1; letter-spacing: .1em; text-transform: uppercase; }
 .list-owner { color: var(--accent-muted); font-size: 10px; margin-top: 2px; }
 .shared-list-note { margin-top: -10px; }
+.list-access-button { padding: 7px 10px; }
+.access-modal { max-width: 480px; }
+.access-actions { margin-top: 22px; }
 .list-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 .list-head-actions { display: flex; gap: 8px; flex-shrink: 0; }
 .list-rows { list-style: none; margin: 14px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
