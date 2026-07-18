@@ -6,7 +6,7 @@
   <meta name="viewport"
     content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
   <title>Marquee — a movie diary</title>
-  <meta name="marquee-build" content="2026.07.17-selected-members-final" />
+  <meta name="marquee-build" content="2026.07.17-shared-label-final" />
   <meta name="description" content="A personal, single-user movie diary powered by TMDB." />
   <link rel="manifest" href="manifest.json" />
   <link rel="icon" href="icons/favicon-32.png" sizes="32x32" />
@@ -63,7 +63,7 @@
 <body>
   <div id="root">
     <div id="boot-message">
-      <span>dimming the lights</span>
+      <span>Dimming the lights</span>
     </div>
   </div>
 
@@ -1172,7 +1172,7 @@ function MovieDiary({
       className: "mvd"
     }, /*#__PURE__*/React.createElement(StyleTag, null), /*#__PURE__*/React.createElement("div", {
       className: "app-loader"
-    }, /*#__PURE__*/React.createElement("span", null, "dimming the lights")));
+    }, /*#__PURE__*/React.createElement("span", null, "Dimming the lights")));
   }
   return /*#__PURE__*/React.createElement("div", {
     className: "mvd",
@@ -2388,7 +2388,7 @@ function ListsPage({
     value: "private"
   }, "Private"), /*#__PURE__*/React.createElement("option", {
     value: "shared"
-  }, "Shared with selected people")), /*#__PURE__*/React.createElement("button", {
+  }, "Shared")), /*#__PURE__*/React.createElement("button", {
     className: "btn-log",
     disabled: !name.trim() || visibility === "shared" && selectedMembers.length === 0,
     onClick: create
@@ -3206,7 +3206,7 @@ function AuthShell() {
       className: "mvd"
     }, /*#__PURE__*/React.createElement(StyleTag, null), /*#__PURE__*/React.createElement("div", {
       className: "app-loader"
-    }, /*#__PURE__*/React.createElement("span", null, "dimming the lights")));
+    }, /*#__PURE__*/React.createElement("span", null, "Dimming the lights")));
   }
   if (session && needsPassword) return /*#__PURE__*/React.createElement(SetPasswordPage, {
     client: APP_CLIENT,
